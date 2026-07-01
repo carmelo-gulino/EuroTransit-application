@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: payments
+
+server:
+  port: 8085
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false

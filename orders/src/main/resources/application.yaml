@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: orders
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/eurotransit
+    username: eurotransit
+    password: password
+
+server:
+  port: 8084
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false

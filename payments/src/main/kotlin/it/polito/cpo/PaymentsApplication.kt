@@ -1,11 +1,11 @@
-package it.polito.cpo.eurotransit
+package it.polito.cpo
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
 @SpringBootApplication
-class EuroTransitApplication
+class PaymentsApplication
 
 fun main(args: Array<String>) {
-    runApplication<EuroTransitApplication>(*args)
+    runApplication<PaymentsApplication>(*args)
 }

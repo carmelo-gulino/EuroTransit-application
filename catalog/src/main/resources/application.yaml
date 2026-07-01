@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: catalog
+
+server:
+  port: 8081
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: notifications
+
+server:
+  port: 8083
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: false
