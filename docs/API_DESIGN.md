@@ -1,83 +1,87 @@
 # EuroTransit API and Service Design
 
-Based on the EuroTransit project requirements and the `EuroTransit-application` structure, the system is decomposed into five core services. This document outlines the main APIs, responsibilities, and communication methods for each service.
+This document defines the service boundaries and communication contracts for EuroTransit. The design intentionally separates synchronous decisions that must be made during checkout from asynchronous work that can be retried, observed, and recovered through Kafka.
 
-## 1. Catalog Service
-**Responsibility:** Lists products, routes, and offers. Mostly reads. Tolerant of staleness.
-**Interaction Style:** Synchronous API.
+For the rationale behind the selected consistency, money-path, and delivery decisions, see [architecture-decisions.md](architecture-decisions.md).
 
-### Endpoints (Synchronous)
-* `GET /api/catalog/routes`
-  * **Description:** Retrieves a list of available train routes and schedules.
-* `GET /api/catalog/routes/{routeId}`
-  * **Description:** Retrieves details for a specific route.
-* `GET /api/catalog/offers`
-  * **Description:** Retrieves available pricing and ticket offers.
+## Service Boundaries
 
----
+| Service | Responsibility | Interaction Style | Why this boundary exists |
+| --- | --- | --- | --- |
+| Catalog | Exposes routes, schedules, products, and offers. | Synchronous read API. | Catalog is read-heavy and tolerant of stale data, so it can be scaled and deployed independently from checkout. |
+| Orders | Owns the customer-facing purchase workflow and order state. | Synchronous entry API plus asynchronous pipeline orchestration. | Orders is the money-path coordinator: it accepts checkout requests quickly and records/reports order progress. |
+| Inventory | Owns finite seat availability and reservations. | Synchronous reservation decision plus reservation events. | Inventory is the contended resource. It must make a strongly consistent decision before a seat is considered reserved. |
+| Payments | Owns payment authorization state. | Synchronous idempotent authorization plus payment events. | Payment authorization must not double-charge under retries; an immediate success/failure decision is needed before order confirmation. |
+| Notifications | Sends confirmations and customer updates. | Fully asynchronous event consumer. | Notification failure must not fail checkout. Kafka buffers the work until the service recovers. |
 
-## 2. Orders Service
-**Responsibility:** Orchestrates the purchase workflow. Provides the synchronous entry point for clients and manages the asynchronous order pipeline.
-**Interaction Style:** Synchronous entry API + Asynchronous pipeline (Kafka & Kotlin Coroutines/Flows) + Synchronous calls to Inventory/Payments.
+## Public APIs
 
-### Endpoints (Synchronous)
-* `POST /api/orders`
-  * **Description:** Places a new train ticket order. Returns quickly with an order status (e.g., `202 Accepted`) while the reservation and payment proceed.
-* `GET /api/orders/{orderId}`
-  * **Description:** Polls or retrieves the current status of an order.
+### Catalog
 
-### Events (Kafka)
-* **Produces:** `order-placed`, `order-confirmed`, `notification-requested`
-* **Consumes:** `inventory-reserved`, `payment-authorized` (depending on pipeline implementation)
+- `GET /api/catalog/routes`
+  - Lists available routes and schedules.
+- `GET /api/catalog/routes/{routeId}`
+  - Returns details for one route.
+- `GET /api/catalog/offers`
+  - Lists currently available pricing and ticket offers.
 
-### Outbound Synchronous Calls (Circuit Broken)
-* `POST /api/inventory/reservations` (Inventory)
-* `POST /api/payments/authorize` (Payments)
+### Orders
 
----
+- `POST /api/orders`
+  - Accepts a checkout request.
+  - Returns `202 Accepted` with an `orderId` and initial status after the request has been accepted for processing.
+  - Requires an idempotency key so client retries do not create duplicate orders.
+- `GET /api/orders/{orderId}`
+  - Returns the current order status: accepted, reserving, payment-pending, confirmed, failed, or cancelled.
 
-## 3. Inventory Service
-**Responsibility:** Tracks finite seats (the contended resource). Prevents overselling.
-**Interaction Style:** Synchronous reservation API + Asynchronous events.
+### Inventory
 
-### Endpoints (Synchronous)
-* `POST /api/inventory/reservations`
-  * **Description:** Attempts to reserve seats for a specific route. Must be idempotent (requires an idempotency key) to handle retries safely.
-* `DELETE /api/inventory/reservations/{reservationId}`
-  * **Description:** Releases a reservation (compensating action if the order ultimately fails).
+- `POST /api/inventory/reservations`
+  - Attempts to reserve requested seats.
+  - Requires an idempotency key derived from the order id and reservation attempt.
+  - Uses a strong consistency decision: the same seat cannot be reserved twice.
+- `DELETE /api/inventory/reservations/{reservationId}`
+  - Releases a reservation when payment fails or the order is cancelled.
 
-### Events (Kafka)
-* **Produces:** `inventory-reserved`, `inventory-failed`
+### Payments
 
----
+- `POST /api/payments/authorize`
+  - Authorizes payment for one order.
+  - Requires an idempotency key so retries return the original authorization result instead of charging again.
 
-## 4. Payments Service
-**Responsibility:** Authorizes payments. Must not double-charge.
-**Interaction Style:** Synchronous call with strict idempotency.
+### Notifications
 
-### Endpoints (Synchronous)
-* `POST /api/payments/authorize`
-  * **Description:** Authorizes a payment for an order. Requires an idempotency key (e.g., the `orderId` or a dedicated token) to prevent double-charging on retried requests.
+- No public synchronous API is exposed.
+- The service consumes events and sends email/SMS confirmations or failure updates.
 
-### Events (Kafka)
-* **Produces:** `payment-authorized`, `payment-declined`
+## Kafka Events
 
----
+| Event | Producer | Consumers | Purpose |
+| --- | --- | --- | --- |
+| `order-placed` | Orders | Orders pipeline observers, optional analytics | Durable record that checkout was accepted. |
+| `inventory-reserved` | Inventory | Orders | Indicates that the requested seats were reserved. |
+| `inventory-failed` | Inventory | Orders | Indicates that reservation failed and the order must not proceed to confirmation. |
+| `payment-authorized` | Payments | Orders | Indicates payment authorization succeeded. |
+| `payment-declined` | Payments | Orders | Indicates payment failed and compensation may be needed. |
+| `order-confirmed` | Orders | Notifications, observability consumers | Indicates the order is complete and customer notification can be sent. |
+| `notification-requested` | Orders | Notifications | Optional explicit notification command if separated from `order-confirmed`. |
 
-## 5. Notifications Service
-**Responsibility:** Sends booking confirmations and updates to the user.
-**Interaction Style:** Fully asynchronous. Failure must degrade gracefully (checkout still succeeds even if notifications are down).
+## Money Path
 
-### Endpoints
-* *No public synchronous APIs exposed.*
+The selected money path is hybrid sync+async:
 
-### Events (Kafka)
-* **Consumes:** `notification-requested` or `order-confirmed`
-* **Action:** Sends email/SMS confirmations based on the consumed events.
+1. Client submits `POST /api/orders`.
+2. Orders validates the request, stores an accepted order, emits `order-placed`, and returns `202 Accepted`.
+3. Orders executes the reservation/payment pipeline with Kotlin coroutines/flows and structured cancellation.
+4. Orders calls Inventory synchronously for the seat reservation because this is the consistency boundary.
+5. Orders calls Payments synchronously for authorization because payment must be idempotent and immediately known before confirmation.
+6. Orders emits final events such as `order-confirmed` and `notification-requested`.
+7. Notifications consumes events asynchronously; if it is down, checkout remains successful and Kafka retains the work.
 
----
+## Resilience Requirements
 
-## Communication & Resilience Summary
-* **North-South Traffic:** Traefik API Gateway exposes `/api/catalog` and `/api/orders` to the outside world.
-* **East-West Sync Traffic:** `Orders` -> `Inventory` and `Orders` -> `Payments`. These calls must be wrapped in **Circuit Breakers** with defined open/half-open policies, timeouts, and bounded retries with jitter.
-* **Async Eventing:** Kafka (via Strimzi) handles the event pipeline (`order-placed`, `inventory-reserved`, `payment-authorized`, `order-confirmed`, `notification-requested`).
+- All synchronous service calls must have timeouts, bounded retries with backoff/jitter, circuit breakers, and bulkheads.
+- Orders must flip readiness to refuse new traffic during shutdown while in-flight coroutine work drains or is cancelled cooperatively.
+- Inventory and Payments must persist idempotency records so duplicate events or HTTP retries return the same outcome.
+- Notification failure is a degraded mode, not a checkout failure.
+- The checkout SLOs, alerts, and tracing requirements are defined in [slo-observability.md](slo-observability.md).

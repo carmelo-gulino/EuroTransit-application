@@ -1,0 +1,69 @@
+# Architecture Decisions
+
+This document records the team-owned decisions required by the capstone specification. The selected options are intentionally explicit because these are judgment points, not implementation details to outsource to tooling.
+
+## ADR-001: Inventory Consistency Model
+
+**Decision:** Use Strong Consistency, modeled as CP under CAP and PC/EC under PACELC.
+
+Inventory owns the finite seat resource. A seat must never be sold twice, even if requests are duplicated, messages are replayed, or an Inventory pod dies mid-reservation.
+
+### Selected Option: Strong CP / PC-EC
+
+- Use PostgreSQL atomic updates or a reservation state machine as the source of truth.
+- Reserve a seat only if the database transition succeeds from an available/holdable state.
+- Store idempotency keys for reservation attempts so retries return the original result.
+- During a database partition or primary failover, checkout writes may fail temporarily rather than accept inconsistent reservations.
+
+### Why This Is Better
+
+This option protects the core business invariant. EuroTransit can tolerate a temporary checkout failure more easily than selling the same seat to two customers. It is also easier to prove under chaos testing: the expected invariant is binary and observable.
+
+### Alternatives Considered
+
+- **Eventual Saga reservation:** Accept orders asynchronously and compensate later if the same seat is assigned twice. This increases availability but violates the "never oversell" invariant temporarily and requires refund/cancellation flows that are harder to defend in the capstone.
+- **Hybrid hold with expiration:** Create a short-lived hold synchronously and confirm asynchronously. This is realistic and compatible with the selected model, but it still needs the same strong database transition for the initial hold. It can be introduced as the concrete implementation pattern, not as a weaker consistency model.
+
+## ADR-002: Money Path Interaction Model
+
+**Decision:** Use a hybrid sync+async checkout model.
+
+### Selected Option: Hybrid Sync+Async
+
+- `POST /api/orders` returns `202 Accepted` quickly with an `orderId`.
+- Orders persists the accepted order and emits `order-placed`.
+- Orders runs the checkout pipeline with Kotlin coroutines/flows.
+- Inventory reservation is a synchronous idempotent decision because seat consistency must be known before confirmation.
+- Payment authorization is a synchronous idempotent decision because retries must not double-charge.
+- Kafka carries durable pipeline events and decouples notifications from checkout success.
+
+### Why This Is Better
+
+This option matches the assignment's async requirement without pretending every decision can safely be deferred. The costly/slow parts are observable and recoverable through Kafka, while the two correctness boundaries, seat reservation and payment authorization, remain explicit synchronous decisions protected by resilience policies.
+
+### Alternative Considered
+
+- **Fully asynchronous checkout:** Orders would only publish events and all downstream work would happen through Kafka. This maximizes decoupling, but it makes immediate reservation/payment outcomes less clear and complicates the user-facing order state. It is harder to prove "no oversell" and "no double-charge" without building a more complex saga and reconciliation model.
+
+## ADR-003: Progressive Delivery Mapping
+
+**Decision:** Demonstrate canary on Orders and blue/green on Catalog.
+
+### Selected Option: Orders Canary + Catalog Blue/Green
+
+- **Orders canary:** Route a small traffic share, for example 5%, to the new Orders version. Promote only if checkout success rate, latency, error rate, and circuit-breaker metrics stay within the defined SLO guardrails.
+- **Catalog blue/green:** Deploy the new Catalog version beside the old one, validate health and read endpoints, then switch traffic. Keep the previous version available for fast rollback.
+
+### Why This Is Better
+
+Orders is the critical money path, so changes must be exposed gradually and judged with production-like symptoms. Catalog is stateless and read-heavy, so it is a better fit for blue/green: both versions can coexist, validation is simple, and rollback is low risk.
+
+### Alternative Considered
+
+- **Inventory canary + Payments blue/green:** Inventory contains critical consistency logic, so a canary sounds attractive. However, canarying state-sensitive reservation behavior can make proof harder because two versions may compete over one invariant. Payments blue/green is reasonable, but it does not demonstrate progressive protection of the central orchestration path as clearly as Orders canary.
+
+## ADR-004: Notification Failure Mode
+
+**Decision:** Notification failure is graceful degradation.
+
+Checkout is complete once reservation and payment succeed and Orders records confirmation. Notifications consumes `order-confirmed` or `notification-requested` asynchronously. If Notifications is down, Kafka retains the event and checkout remains successful.
