@@ -13,7 +13,7 @@ This log is intentionally required by the capstone. It records concrete cases wh
 
 - **Agent output:** An alert fired on high CPU usage for Orders.
 - **Why it was wrong:** The assignment requires symptom-based alerts tied to SLOs. CPU alone does not prove user-visible failure.
-- **How the team caught it:** SLO review against `slo-observability.md`.
+- **How the team caught it:** SLO review against `operations/slo-observability.md`.
 - **Correction:** Replace with checkout success-rate burn and checkout latency alerts. Keep CPU on dashboards for diagnosis.
 
 ## Case 3: Non-Idempotent Kafka Consumer
@@ -27,5 +27,5 @@ This log is intentionally required by the capstone. It records concrete cases wh
 
 - **Agent output:** A generated ServiceAccount had broad namespace write privileges.
 - **Why it was wrong:** The agent is inside the delivery loop and must have limited blast radius.
-- **How the team caught it:** RBAC review in `agent-governance.md`.
+- **How the team caught it:** RBAC review in `governance/agent-governance.md`.
 - **Correction:** Scope permissions to the minimum resources required and require human review before config repo merge.

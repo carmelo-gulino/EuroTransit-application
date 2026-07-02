@@ -84,4 +84,4 @@ The selected money path is hybrid sync+async:
 - Orders must flip readiness to refuse new traffic during shutdown while in-flight coroutine work drains or is cancelled cooperatively.
 - Inventory and Payments must persist idempotency records so duplicate events or HTTP retries return the same outcome.
 - Notification failure is a degraded mode, not a checkout failure.
-- The checkout SLOs, alerts, and tracing requirements are defined in [slo-observability.md](slo-observability.md).
+- The checkout SLOs, alerts, and tracing requirements are defined in [slo-observability.md](../operations/slo-observability.md).

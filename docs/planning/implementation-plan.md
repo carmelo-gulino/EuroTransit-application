@@ -18,7 +18,7 @@ This plan turns the capstone requirements into implementation work. It assumes t
 
 ## Decision Summary
 
-The selected decisions are documented in [architecture-decisions.md](architecture-decisions.md). The alternatives are retained there because the team must be able to defend why they were rejected.
+The selected decisions are documented in [architecture-decisions.md](../design/architecture-decisions.md). The alternatives are retained there because the team must be able to defend why they were rejected.
 
 - Strong CP inventory is preferred over eventual reservation because the domain invariant "never oversell a seat" is more important than accepting every order during a partition.
 - Hybrid sync+async checkout is preferred over fully async checkout because Inventory and Payments require immediate, idempotent decisions, while Kafka still carries the durable workflow and notification stages.
@@ -48,19 +48,19 @@ The selected decisions are documented in [architecture-decisions.md](architectur
 - Add idempotency keys and deduplication tables/records across Orders, Inventory, and Payments.
 - Add Resilience4j circuit breakers, bulkheads, timeouts, and bounded retries with jitter.
 - Add Kubernetes startup, readiness, and liveness probes; liveness must not depend on downstream services.
-- Define checkout SLOs, SLIs, burn-rate alerts, dashboards, and traces as described in [slo-observability.md](slo-observability.md).
+- Define checkout SLOs, SLIs, burn-rate alerts, dashboards, and traces as described in [slo-observability.md](../operations/slo-observability.md).
 - Add trace propagation across gateway, Orders, Inventory, Payments, and Kafka stages.
 
 ### Week 4: Progressive Delivery, Chaos, and Presentation Proof
 
 - Implement Orders canary with TraefikService and SLO-gated promotion/abort.
 - Implement Catalog blue/green with fast rollback.
-- Run and document the chaos experiments in [chaos-experiments.md](chaos-experiments.md).
-- Complete [agent-governance.md](agent-governance.md), [agent-log.md](agent-log.md), and a blameless postmortem using [postmortem-template.md](postmortem-template.md).
+- Run and document the chaos experiments in [chaos-experiments.md](../operations/chaos-experiments.md).
+- Complete [agent-governance.md](../governance/agent-governance.md), [agent-log.md](../agent-log.md), and a blameless postmortem using [postmortem-template.md](../templates/postmortem-template.md).
 - Record the 5-minute demo showing the running system, dashboards, canary, blue/green, one injected failure, and one alert firing.
 
 ## Verification Plan
 
-- The DoD in [capstone-dod.md](capstone-dod.md) is the release gate.
+- The DoD in [capstone-dod.md](../capstone-dod.md) is the release gate.
 - Every chaos experiment must include steady state, hypothesis, injected failure, observed dashboards/traces/logs, conclusion, and follow-up change.
 - The final demo must prove at least one live incident from injection to alert to diagnosis to recovery.

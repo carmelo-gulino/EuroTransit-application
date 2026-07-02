@@ -4,8 +4,8 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 
 ## 1. Design and Async
 
-- [ ] Service boundaries and sync/async communication choices are documented in `API_DESIGN.md`.
-- [ ] Architecture decisions are documented in `architecture-decisions.md`, including rejected alternatives and trade-offs.
+- [ ] Service boundaries and sync/async communication choices are documented in `design/api-design.md`.
+- [ ] Architecture decisions are documented in `design/architecture-decisions.md`, including rejected alternatives and trade-offs.
 - [ ] Orders implements an asynchronous pipeline with Kotlin coroutines/flows and Kafka-visible stages.
 - [ ] Shutdown behavior is demonstrated: readiness refuses new traffic, in-flight work drains or cancels cooperatively, and no duplicate processing occurs after restart.
 - [ ] The async design explains where suspending work reduces cost/scaling pressure and where it does not help CPU-bound work.
@@ -35,13 +35,13 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 - [ ] Orders canary is demonstrated with metric-gated promote/abort.
 - [ ] Catalog blue/green is demonstrated with fast rollback.
 - [ ] The team explains why rolling and all-at-once are not used for the critical path.
-- [ ] Checkout latency and success-rate SLOs are defined in `slo-observability.md`.
+- [ ] Checkout latency and success-rate SLOs are defined in `operations/slo-observability.md`.
 - [ ] RED dashboards, infrastructure USE/Golden Signals dashboards, and symptom-based alerts are live.
 - [ ] A single order can be traced through gateway, Orders, Inventory, Payments, and Kafka stages.
 
 ## 5. Chaos Experiments
 
-- [ ] The chaos plan in `chaos-experiments.md` is complete.
+- [ ] The chaos plan in `operations/chaos-experiments.md` is complete.
 - [ ] Latency injection into Payments proves the Orders circuit breaker opens and Catalog remains healthy.
 - [ ] Inventory pod kill mid-reservation proves idempotency and no oversell/double-charge.
 - [ ] Node or AZ-style disruption proves PDBs/topology spread protect the critical path.
@@ -51,13 +51,13 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 
 ## 6. Agentic Coding and Governance
 
-- [ ] `agent-governance.md` documents credentials, permissions, blast radius, review gates, and worst-case failure.
+- [ ] `governance/agent-governance.md` documents credentials, permissions, blast radius, review gates, and worst-case failure.
 - [ ] `agent-log.md` contains at least three concrete agent mistakes and how the team detected and corrected them.
 - [ ] Agent-generated delivery artifacts require human review or policy-as-code before merge to the configuration repository.
 
 ## 7. Final Deliverables
 
 - [ ] `docs/` contains design/consistency justification, SLO definitions, chaos reports, postmortem, agent threat model, and agent log.
-- [ ] A blameless postmortem is completed using `postmortem-template.md`.
+- [ ] A blameless postmortem is completed using `templates/postmortem-template.md`.
 - [ ] A 5-minute recorded demo link is committed.
 - [ ] The demo shows the running system, dashboards, canary, blue/green, one injected failure, and one alert firing.
