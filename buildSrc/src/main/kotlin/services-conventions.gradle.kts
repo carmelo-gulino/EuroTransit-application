@@ -9,6 +9,9 @@ repositories {
     mavenCentral()
 }
 
+group = rootProject.group
+version = rootProject.version
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
