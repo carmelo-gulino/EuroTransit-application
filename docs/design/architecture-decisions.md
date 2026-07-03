@@ -1,6 +1,6 @@
 # Architecture Decisions
 
-This document records the team-owned decisions required by the capstone specification. The selected options are intentionally explicit because these are judgment points, not implementation details to outsource to tooling.
+This document records the team-owned decisions required by the assignment specification. The selected options are intentionally explicit because these are judgment points, not implementation details to outsource to tooling.
 
 ## ADR-001: Inventory Consistency Model
 
@@ -32,7 +32,7 @@ This option protects the core business invariant. EuroTransit can tolerate a tem
 
 ### Alternatives Considered
 
-- **Eventual Saga reservation:** Accept orders asynchronously and compensate later if the same seat is assigned twice. This increases availability but violates the "never oversell" invariant temporarily and requires refund/cancellation flows that are harder to defend in the capstone.
+- **Eventual Saga reservation:** Accept orders asynchronously and compensate later if the same seat is assigned twice. This increases availability but violates the "never oversell" invariant temporarily and requires refund/cancellation flows that are harder to defend in the assignment proof.
 - **Short-lived hold without strong consistency:** Create a hold with expiration but without a strongly consistent database transition. This still risks two active holds for the same seat under concurrency, so it does not protect the core invariant.
 
 ## ADR-002: Money Path Interaction Model
@@ -78,3 +78,25 @@ Orders is the critical money path, so changes must be exposed gradually and judg
 **Decision:** Notification failure is graceful degradation.
 
 Checkout is complete once the 10-minute seat hold is converted to sold, payment succeeds, and Orders records confirmation. Notifications consumes `order-confirmed` or `notification-requested` asynchronously. If Notifications is down, Kafka retains the event and checkout remains successful.
+
+## ADR-005: Authentication and Security Scope
+
+**Decision:** Treat EuroTransit as enterprise-grade. Authentication and authorization are part of the design, not optional polish.
+
+### Selected Option: Authenticated Public APIs with Internal Service Trust
+
+- Public traffic enters only through Traefik with TLS configured in the cluster configuration repository.
+- Customer-facing APIs require an authenticated user identity. In local development this may be a mock identity provider, but the API shape must still carry a user principal.
+- Checkout uses the authenticated customer identity as part of the order ownership and audit trail.
+- Order reads are authorized by ownership, with separate operational/admin access for support use cases.
+- Inventory and Payments remain internal APIs and are not exposed directly outside the cluster.
+- Secrets are managed through SealedSecrets or equivalent GitOps-safe secret mechanisms.
+- The payment service is a mock authorization service for this project and must not handle real card data.
+
+### Why This Is Better
+
+This keeps the project aligned with an enterprise-grade target while allowing a pragmatic implementation path. A mock or simplified provider can be used first, but the architecture still defines where identity is enforced and how authorization affects the money path.
+
+### Alternative Considered
+
+- **No authentication:** This would reduce implementation work, but it leaves a major enterprise concern unspecified and weakens the design of order ownership, auditability, and payment authorization.

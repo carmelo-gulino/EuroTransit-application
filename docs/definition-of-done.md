@@ -1,6 +1,6 @@
 # Definition of Done: EuroTransit Marketplace
 
-This DoD is the operational release gate for the capstone. Each item must be backed by code, configuration, screenshots/logs, dashboard links, or written experiment results.
+This DoD is the operational release gate for EuroTransit Marketplace. Each item must be backed by code, configuration, screenshots/logs, dashboard links, or written experiment results. The target readiness date is **2026-07-14**.
 
 ## 1. Design and Async
 
@@ -41,7 +41,19 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 - [ ] RED dashboards, infrastructure USE/Golden Signals dashboards, and symptom-based alerts are live.
 - [ ] A single order can be traced through gateway, Orders, Inventory, Payments, and Kafka stages.
 
-## 5. Chaos Experiments
+## 5. Security and Configuration
+
+- [ ] Traefik rejects unauthenticated requests to protected external APIs before they reach service pods.
+- [ ] Services validate the authenticated principal and enforce resource ownership or privileged scopes locally.
+- [ ] Order reads are authorized by owner identity or by an explicit operational/admin role.
+- [ ] Inventory and Payments are internal service-to-service APIs, not public endpoints, and require service credentials plus propagated user context.
+- [ ] Local development uses a mock OIDC issuer or fixed development JWTs without changing production API contracts.
+- [ ] TLS is terminated at Traefik in the cluster environment.
+- [ ] Secrets are stored through SealedSecrets or an equivalent GitOps-safe mechanism.
+- [ ] Money-path audit logs include correlation ID, principal ID, order ID, and outcome, while excluding secrets and payment details.
+- [ ] No real card data is handled; Payments is a mock authorization service.
+
+## 6. Chaos Experiments
 
 - [ ] The chaos plan in `operations/chaos-experiments.md` is complete.
 - [ ] Latency injection into Payments proves the Orders circuit breaker opens and Catalog remains healthy.
@@ -51,13 +63,13 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 - [ ] CloudNativePG primary failover records checkout impact and observed RTO.
 - [ ] Each report includes hypothesis, steady state, injected fault, observations, conclusion, and follow-up change.
 
-## 6. Agentic Coding and Governance
+## 7. Agentic Coding and Governance
 
 - [ ] `governance/agent-governance.md` documents credentials, permissions, blast radius, review gates, and worst-case failure.
 - [ ] `agent-log.md` contains at least three concrete agent mistakes and how the team detected and corrected them.
 - [ ] Agent-generated delivery artifacts require human review or policy-as-code before merge to the configuration repository.
 
-## 7. Final Deliverables
+## 8. Final Deliverables
 
 - [ ] `docs/` contains design/consistency justification, SLO definitions, chaos reports, postmortem, agent threat model, and agent log.
 - [ ] A blameless postmortem is completed using `templates/postmortem-template.md`.

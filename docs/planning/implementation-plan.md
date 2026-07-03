@@ -1,9 +1,11 @@
-# EuroTransit Capstone Work Plan
+# EuroTransit Marketplace Work Plan
 
-This plan turns the capstone requirements into implementation work. It assumes the two-repository GitOps model required by the assignment:
+This plan turns the assignment requirements into implementation work. The target is an enterprise-grade EuroTransit Marketplace implementation ready by **2026-07-14**. It assumes the two-repository GitOps model required by the assignment:
 
 - Application repository: service source code, tests, CI workflows, and application-facing docs.
 - Configuration repository: Helm/manifests, ArgoCD applications, platform bootstrap, SLO/alert definitions, dashboards, sealed secrets, and chaos experiment manifests.
+
+For the detailed five-person parallel execution model with AI coding agents, see [team-agentic-implementation-plan.md](team-agentic-implementation-plan.md).
 
 ## Resolved Decisions
 
@@ -14,6 +16,9 @@ This plan turns the capstone requirements into implementation work. It assumes t
 - **Inventory consistency:** Strong CP / PC-EC model using PostgreSQL atomic reservation updates or an equivalent reservation state machine.
 - **Money path:** Hybrid sync+async. Orders accepts checkout quickly, then runs a Kafka-visible pipeline while using synchronous idempotent decisions for Inventory and Payments.
 - **Progressive delivery:** Orders uses canary. Catalog uses blue/green.
+- **Authentication boundary:** Traefik enforces OIDC/JWT authentication for protected external APIs before traffic reaches services.
+- **Service authorization:** Services perform local authorization using propagated principal, scopes, order ownership, and service credentials for internal calls.
+- **Local identity provider:** Local development can start with a mock OIDC issuer or fixed development JWTs, but API contracts must match the production security model.
 - **Notifications degradation:** Notifications is fully asynchronous. Checkout succeeds when reservation and payment succeed, even if Notifications is down.
 
 ## Decision Summary
@@ -24,7 +29,7 @@ The selected decisions are documented in [architecture-decisions.md](../design/a
 - Hybrid sync+async checkout is preferred over fully async checkout because Inventory and Payments require immediate, idempotent decisions, while Kafka still carries the durable workflow and notification stages.
 - Orders canary plus Catalog blue/green is preferred because Orders is the critical path that needs metric-gated rollout, while Catalog is stateless/read-heavy and safer to switch as a whole.
 
-## 1-Month Timeline
+## Enterprise-Grade Readiness Timeline
 
 ### Week 1: Foundation, GitOps, and Walking Skeleton
 
@@ -38,6 +43,8 @@ The selected decisions are documented in [architecture-decisions.md](../design/a
 
 - Implement Catalog read endpoints and Orders checkout entry API.
 - Implement Orders pipeline with Kotlin coroutines/flows and Kafka-visible events.
+- Add gateway authentication and service-level authorization for customer and operations flows.
+- Define principal propagation for synchronous calls and Kafka events without leaking secrets or payment data.
 - Implement Inventory reservation using the selected strong consistency model.
 - Implement Payments authorization with strict idempotency.
 - Implement Notifications as an asynchronous event consumer.
@@ -46,6 +53,7 @@ The selected decisions are documented in [architecture-decisions.md](../design/a
 ### Week 3: Resilience and Observability
 
 - Add idempotency keys and deduplication tables/records across Orders, Inventory, and Payments.
+- Add authorization checks for order ownership and operational/admin access.
 - Add Resilience4j circuit breakers, bulkheads, timeouts, and bounded retries with jitter.
 - Add Kubernetes startup, readiness, and liveness probes; liveness must not depend on downstream services.
 - Define checkout SLOs, SLIs, burn-rate alerts, dashboards, and traces as described in [slo-observability.md](../operations/slo-observability.md).
@@ -53,6 +61,7 @@ The selected decisions are documented in [architecture-decisions.md](../design/a
 
 ### Week 4: Progressive Delivery, Chaos, and Presentation Proof
 
+- Complete security acceptance checks: unauthenticated requests rejected, unauthorized order reads denied, internal-only APIs inaccessible from outside, and secrets absent from logs/config.
 - Implement Orders canary with TraefikService and SLO-gated promotion/abort.
 - Implement Catalog blue/green with fast rollback.
 - Run and document the chaos experiments in [chaos-experiments.md](../operations/chaos-experiments.md).
@@ -61,6 +70,6 @@ The selected decisions are documented in [architecture-decisions.md](../design/a
 
 ## Verification Plan
 
-- The DoD in [capstone-dod.md](../capstone-dod.md) is the release gate.
+- The DoD in [definition-of-done.md](../definition-of-done.md) is the release gate.
 - Every chaos experiment must include steady state, hypothesis, injected failure, observed dashboards/traces/logs, conclusion, and follow-up change.
 - The final demo must prove at least one live incident from injection to alert to diagnosis to recovery.

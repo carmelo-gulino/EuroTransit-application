@@ -4,6 +4,31 @@ This document defines the service boundaries and communication contracts for Eur
 
 For the rationale behind the selected consistency, money-path, and delivery decisions, see [architecture-decisions.md](architecture-decisions.md).
 
+## Security Boundary
+
+EuroTransit is designed as an enterprise-grade system. Public APIs must assume an authenticated user identity, even if local development starts with a mock identity provider.
+
+- Traefik is the only north-south entry point and terminates TLS in the cluster environment.
+- Public APIs expect OAuth2/OIDC bearer JWTs. Tokens must carry a stable subject (`sub`), tenant or organization context when applicable, and role/scope claims.
+- Customer-facing write APIs, especially checkout, require an authenticated customer identity.
+- `GET /api/orders/{orderId}` must only return orders owned by the authenticated customer, unless the caller has an operational/admin role.
+- Inventory and Payments APIs are internal service-to-service APIs and are not exposed directly to public clients.
+- Service-to-service requests must propagate correlation IDs, the authenticated principal where required, and a trusted service identity. The production target should use mTLS or an equivalent workload-identity control.
+- Gateway authentication is not a substitute for service-level authorization. Each service must enforce local ownership, role, and scope decisions for resources it owns.
+- Money-path actions must emit audit-ready logs with correlation ID, principal ID, order ID, and outcome. Logs must not contain bearer tokens, secrets, raw payment data, or card details.
+- Secrets such as database credentials, signing keys, and payment-provider credentials belong in the configuration repository as SealedSecrets, not in application source.
+
+### Endpoint Security Summary
+
+| Endpoint Group | Exposure | Authentication | Authorization |
+| --- | --- | --- | --- |
+| `GET /api/catalog/**` | Public or authenticated depending on offer visibility | Optional for public catalog; required for personalized offers | Public read or customer scope |
+| `POST /api/orders` | External | Required | Customer scope; principal becomes order owner |
+| `GET /api/orders/{orderId}` | External | Required | Order owner or privileged operations scope |
+| `POST /api/inventory/reservations` | Internal | Required service credential plus propagated user context | Orders service only; order owner context required |
+| `DELETE /api/inventory/reservations/{reservationId}` | Internal | Required service credential plus propagated user context | Orders service only; compensation for owned order |
+| `POST /api/payments/authorize` | Internal | Required service credential plus propagated user context | Orders service only; payment belongs to owned order |
+
 ## Service Boundaries
 
 | Service | Responsibility | Interaction Style | Why this boundary exists |
@@ -19,25 +44,28 @@ For the rationale behind the selected consistency, money-path, and delivery deci
 ### Catalog
 
 - `GET /api/catalog/routes`
-  - Lists available routes and schedules.
+  - Lists available routes and schedules. Public data may be served without authentication; personalized pricing requires an authenticated user.
 - `GET /api/catalog/routes/{routeId}`
   - Returns details for one route.
 - `GET /api/catalog/offers`
-  - Lists currently available pricing and ticket offers.
+  - Lists currently available pricing and ticket offers. Personalized offers require a customer principal.
 
 ### Orders
 
 - `POST /api/orders`
   - Accepts a checkout request.
+  - Requires an authenticated customer identity.
   - Returns `202 Accepted` with an `orderId` and initial status after the request has been accepted for processing.
   - Requires an idempotency key so client retries do not create duplicate orders.
 - `GET /api/orders/{orderId}`
   - Returns the current order status: accepted, reserving, payment-pending, confirmed, failed, or cancelled.
+  - Requires the authenticated customer to own the order, unless an operator/admin role is used.
 
 ### Inventory
 
 - `POST /api/inventory/reservations`
   - Attempts to create a 10-minute hold for the requested seats.
+  - Internal API; callers must be trusted services such as Orders.
   - Requires an idempotency key derived from the order id and reservation attempt.
   - Uses a strong consistency decision: the same seat cannot have two active holds.
 - `DELETE /api/inventory/reservations/{reservationId}`
@@ -47,6 +75,7 @@ For the rationale behind the selected consistency, money-path, and delivery deci
 
 - `POST /api/payments/authorize`
   - Authorizes payment for one order.
+  - Internal API; callers must be trusted services such as Orders.
   - Requires an idempotency key so retries return the original authorization result instead of charging again.
 
 ### Notifications

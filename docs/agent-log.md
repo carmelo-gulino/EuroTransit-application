@@ -1,6 +1,6 @@
 # Agent Mistake Log
 
-This log is intentionally required by the capstone. It records concrete cases where an agent-generated artifact was wrong, unsafe, or incomplete, and how the team corrected it.
+This log is intentionally required by the assignment. It records concrete cases where an agent-generated artifact was wrong, unsafe, or incomplete, and how the team corrected it.
 
 ## Case 1: Liveness Probe Checked Downstream Dependency
 

@@ -1,11 +1,11 @@
 # EuroTransit Documentation
 
-This folder contains the capstone requirements and the project-owned documents that answer them.
+This folder contains the assignment requirements and the project-owned documents that answer them. The product/system name is **EuroTransit** or **EuroTransit Marketplace**.
 
 ## Required Reference
 
-- [CapstoneProject.pdf](CapstoneProject.pdf): assignment requirements from the professors.
-- [capstone-dod.md](capstone-dod.md): operational Definition of Done.
+- [assignment-requirements.pdf](assignment-requirements.pdf): assignment requirements from the professors.
+- [definition-of-done.md](definition-of-done.md): operational Definition of Done.
 
 ## Design
 
@@ -25,4 +25,5 @@ This folder contains the capstone requirements and the project-owned documents t
 ## Supporting Material
 
 - [planning/implementation-plan.md](planning/implementation-plan.md): phased work plan.
+- [planning/team-agentic-implementation-plan.md](planning/team-agentic-implementation-plan.md): five-person parallel implementation plan with AI coding agents.
 - [templates/postmortem-template.md](templates/postmortem-template.md): template for the required blameless postmortem.
