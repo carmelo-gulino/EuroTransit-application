@@ -10,13 +10,13 @@ Each experiment must be run as a hypothesis-driven test. Reports should keep the
 - **Observe:** Orders circuit-breaker state, checkout latency/error rate, Catalog RED metrics, traces showing Payments delay.
 - **Success condition:** No unbounded hangs, no retry storm, Catalog remains inside SLO.
 
-## Experiment 2: Inventory Pod Kill Mid-Reservation
+## Experiment 2: Inventory Pod Kill Mid-Hold
 
-- **Steady state:** Reservation success/failure metrics are stable and no oversell invariant violations are reported.
-- **Hypothesis:** Killing Inventory during reservation does not oversell seats and does not double-charge payments because idempotency records and atomic reservation transitions are used.
+- **Steady state:** Hold success/failure/expiration metrics are stable and no oversell invariant violations are reported.
+- **Hypothesis:** Killing Inventory during hold creation does not oversell seats and does not double-charge payments because idempotency records and atomic hold transitions are used.
 - **Injection:** Kill an Inventory pod during concurrent checkout load.
-- **Observe:** Duplicate idempotency hits, reservation state transitions, order terminal states, payment authorization count per order.
-- **Success condition:** Each order has at most one reservation result and at most one payment authorization result.
+- **Observe:** Duplicate idempotency hits, hold state transitions, expired holds, order terminal states, payment authorization count per order.
+- **Success condition:** Each order has at most one active hold result and at most one payment authorization result.
 
 ## Experiment 3: Node or AZ-Style Disruption
 
@@ -36,8 +36,8 @@ Each experiment must be run as a hypothesis-driven test. Reports should keep the
 
 ## Experiment 5: CloudNativePG Primary Failover
 
-- **Steady state:** Inventory reservation writes and Orders state writes are healthy.
+- **Steady state:** Inventory hold writes and Orders state writes are healthy.
 - **Hypothesis:** During PostgreSQL primary failover, checkout write operations may fail temporarily, but the system recovers within the stated RTO and never oversells.
 - **Injection:** Trigger CloudNativePG primary failover.
-- **Observe:** Checkout errors, database failover time, RTO, reservation invariant metrics, traces for failed writes.
+- **Observe:** Checkout errors, database failover time, RTO, hold invariant metrics, traces for failed writes.
 - **Success condition:** No oversell occurs, and checkout recovers within the documented RTO.

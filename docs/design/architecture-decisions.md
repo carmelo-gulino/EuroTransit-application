@@ -11,9 +11,20 @@ Inventory owns the finite seat resource. A seat must never be sold twice, even i
 ### Selected Option: Strong CP / PC-EC
 
 - Use PostgreSQL atomic updates or a reservation state machine as the source of truth.
-- Reserve a seat only if the database transition succeeds from an available/holdable state.
-- Store idempotency keys for reservation attempts so retries return the original result.
-- During a database partition or primary failover, checkout writes may fail temporarily rather than accept inconsistent reservations.
+- Seat selection in the UI is tentative and does not reserve inventory.
+- Checkout creates a strongly consistent 10-minute hold only if the seat is available.
+- Payment is attempted only after the hold succeeds.
+- If payment succeeds before the hold expires, the seat transitions to sold.
+- If payment fails, the order is cancelled, or the 10-minute hold expires, the seat returns to available.
+- Store idempotency keys for hold/reservation attempts so retries return the original result.
+- During a database partition or primary failover, checkout writes may fail temporarily rather than accept inconsistent holds.
+
+The intended state model is:
+
+```text
+AVAILABLE -> HELD -> SOLD
+AVAILABLE -> HELD -> RELEASED/EXPIRED -> AVAILABLE
+```
 
 ### Why This Is Better
 
@@ -22,7 +33,7 @@ This option protects the core business invariant. EuroTransit can tolerate a tem
 ### Alternatives Considered
 
 - **Eventual Saga reservation:** Accept orders asynchronously and compensate later if the same seat is assigned twice. This increases availability but violates the "never oversell" invariant temporarily and requires refund/cancellation flows that are harder to defend in the capstone.
-- **Hybrid hold with expiration:** Create a short-lived hold synchronously and confirm asynchronously. This is realistic and compatible with the selected model, but it still needs the same strong database transition for the initial hold. It can be introduced as the concrete implementation pattern, not as a weaker consistency model.
+- **Short-lived hold without strong consistency:** Create a hold with expiration but without a strongly consistent database transition. This still risks two active holds for the same seat under concurrency, so it does not protect the core invariant.
 
 ## ADR-002: Money Path Interaction Model
 
@@ -33,13 +44,13 @@ This option protects the core business invariant. EuroTransit can tolerate a tem
 - `POST /api/orders` returns `202 Accepted` quickly with an `orderId`.
 - Orders persists the accepted order and emits `order-placed`.
 - Orders runs the checkout pipeline with Kotlin coroutines/flows.
-- Inventory reservation is a synchronous idempotent decision because seat consistency must be known before confirmation.
+- Inventory hold creation is a synchronous idempotent decision because seat consistency must be known before payment.
 - Payment authorization is a synchronous idempotent decision because retries must not double-charge.
 - Kafka carries durable pipeline events and decouples notifications from checkout success.
 
 ### Why This Is Better
 
-This option matches the assignment's async requirement without pretending every decision can safely be deferred. The costly/slow parts are observable and recoverable through Kafka, while the two correctness boundaries, seat reservation and payment authorization, remain explicit synchronous decisions protected by resilience policies.
+This option matches the assignment's async requirement without pretending every decision can safely be deferred. The costly/slow parts are observable and recoverable through Kafka, while the two correctness boundaries, seat hold creation and payment authorization, remain explicit synchronous decisions protected by resilience policies.
 
 ### Alternative Considered
 
@@ -66,4 +77,4 @@ Orders is the critical money path, so changes must be exposed gradually and judg
 
 **Decision:** Notification failure is graceful degradation.
 
-Checkout is complete once reservation and payment succeed and Orders records confirmation. Notifications consumes `order-confirmed` or `notification-requested` asynchronously. If Notifications is down, Kafka retains the event and checkout remains successful.
+Checkout is complete once the 10-minute seat hold is converted to sold, payment succeeds, and Orders records confirmation. Notifications consumes `order-confirmed` or `notification-requested` asynchronously. If Notifications is down, Kafka retains the event and checkout remains successful.

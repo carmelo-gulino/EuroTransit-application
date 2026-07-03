@@ -13,7 +13,9 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 ## 2. Consistency and Idempotency
 
 - [ ] Inventory uses the selected Strong CP / PC-EC consistency model.
-- [ ] The "never oversell" invariant is implemented with atomic reservation updates or an equivalent reservation state machine.
+- [ ] The "never oversell" invariant is implemented with atomic 10-minute seat holds or an equivalent reservation state machine.
+- [ ] Payment is attempted only after Inventory creates a valid hold.
+- [ ] Holds expire after 10 minutes or are released when payment fails/cancels.
 - [ ] Orders, Inventory, and Payments persist idempotency keys and return stable outcomes for duplicate requests/events.
 - [ ] Duplicate `order-placed` events and retried payment authorizations cannot double-reserve or double-charge.
 
@@ -43,7 +45,7 @@ This DoD is the operational release gate for the capstone. Each item must be bac
 
 - [ ] The chaos plan in `operations/chaos-experiments.md` is complete.
 - [ ] Latency injection into Payments proves the Orders circuit breaker opens and Catalog remains healthy.
-- [ ] Inventory pod kill mid-reservation proves idempotency and no oversell/double-charge.
+- [ ] Inventory pod kill mid-hold proves idempotency and no oversell/double-charge.
 - [ ] Node or AZ-style disruption proves PDBs/topology spread protect the critical path.
 - [ ] Kafka disruption proves the async pipeline recovers without lost or duplicated business effects.
 - [ ] CloudNativePG primary failover records checkout impact and observed RTO.

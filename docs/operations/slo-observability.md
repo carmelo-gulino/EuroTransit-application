@@ -21,7 +21,7 @@ The critical user journey is checkout: client request through gateway, Orders, I
 
 - **Money Path RED:** request rate, error rate, and duration for gateway, Orders, Inventory, and Payments.
 - **Kafka Pipeline:** consumer lag, produced/consumed event counts, duplicate events, dead-letter count.
-- **Inventory Correctness:** reservation attempts, successful reservations, rejected reservations, duplicate idempotency hits, oversell invariant violations.
+- **Inventory Correctness:** hold attempts, successful holds, rejected holds, expired holds, duplicate idempotency hits, oversell invariant violations.
 - **Payment Safety:** authorization attempts, duplicate idempotency hits, declines, retry count, circuit-breaker state.
 - **Infrastructure USE/Golden Signals:** CPU, memory, network, disk, pod restarts, saturation, and dependency health.
 
@@ -42,7 +42,7 @@ Every checkout trace must include:
 
 - Gateway inbound request span.
 - Orders acceptance span.
-- Inventory reservation span.
+- Inventory hold/reservation span.
 - Payments authorization span.
 - Kafka publish spans for order/payment/notification events.
 - Consumer spans for asynchronous stages.

@@ -10,7 +10,7 @@ For the rationale behind the selected consistency, money-path, and delivery deci
 | --- | --- | --- | --- |
 | Catalog | Exposes routes, schedules, products, and offers. | Synchronous read API. | Catalog is read-heavy and tolerant of stale data, so it can be scaled and deployed independently from checkout. |
 | Orders | Owns the customer-facing purchase workflow and order state. | Synchronous entry API plus asynchronous pipeline orchestration. | Orders is the money-path coordinator: it accepts checkout requests quickly and records/reports order progress. |
-| Inventory | Owns finite seat availability and reservations. | Synchronous reservation decision plus reservation events. | Inventory is the contended resource. It must make a strongly consistent decision before a seat is considered reserved. |
+| Inventory | Owns finite seat availability and time-limited seat holds. | Synchronous hold decision plus reservation events. | Inventory is the contended resource. It must create one strongly consistent hold before a seat can proceed to payment. |
 | Payments | Owns payment authorization state. | Synchronous idempotent authorization plus payment events. | Payment authorization must not double-charge under retries; an immediate success/failure decision is needed before order confirmation. |
 | Notifications | Sends confirmations and customer updates. | Fully asynchronous event consumer. | Notification failure must not fail checkout. Kafka buffers the work until the service recovers. |
 
@@ -37,11 +37,11 @@ For the rationale behind the selected consistency, money-path, and delivery deci
 ### Inventory
 
 - `POST /api/inventory/reservations`
-  - Attempts to reserve requested seats.
+  - Attempts to create a 10-minute hold for the requested seats.
   - Requires an idempotency key derived from the order id and reservation attempt.
-  - Uses a strong consistency decision: the same seat cannot be reserved twice.
+  - Uses a strong consistency decision: the same seat cannot have two active holds.
 - `DELETE /api/inventory/reservations/{reservationId}`
-  - Releases a reservation when payment fails or the order is cancelled.
+  - Releases a hold when payment fails, the order is cancelled, or the 10-minute hold expires.
 
 ### Payments
 
@@ -59,8 +59,8 @@ For the rationale behind the selected consistency, money-path, and delivery deci
 | Event | Producer | Consumers | Purpose |
 | --- | --- | --- | --- |
 | `order-placed` | Orders | Orders pipeline observers, optional analytics | Durable record that checkout was accepted. |
-| `inventory-reserved` | Inventory | Orders | Indicates that the requested seats were reserved. |
-| `inventory-failed` | Inventory | Orders | Indicates that reservation failed and the order must not proceed to confirmation. |
+| `inventory-reserved` | Inventory | Orders | Indicates that the requested seats are held for 10 minutes and can proceed to payment. |
+| `inventory-failed` | Inventory | Orders | Indicates that the hold failed and the order must not proceed to payment. |
 | `payment-authorized` | Payments | Orders | Indicates payment authorization succeeded. |
 | `payment-declined` | Payments | Orders | Indicates payment failed and compensation may be needed. |
 | `order-confirmed` | Orders | Notifications, observability consumers | Indicates the order is complete and customer notification can be sent. |
@@ -73,8 +73,8 @@ The selected money path is hybrid sync+async:
 1. Client submits `POST /api/orders`.
 2. Orders validates the request, stores an accepted order, emits `order-placed`, and returns `202 Accepted`.
 3. Orders executes the reservation/payment pipeline with Kotlin coroutines/flows and structured cancellation.
-4. Orders calls Inventory synchronously for the seat reservation because this is the consistency boundary.
-5. Orders calls Payments synchronously for authorization because payment must be idempotent and immediately known before confirmation.
+4. Orders calls Inventory synchronously to create a 10-minute seat hold because this is the consistency boundary.
+5. Orders calls Payments synchronously only after the hold succeeds, because payment must be idempotent and immediately known before confirmation.
 6. Orders emits final events such as `order-confirmed` and `notification-requested`.
 7. Notifications consumes events asynchronously; if it is down, checkout remains successful and Kafka retains the work.
 
@@ -83,5 +83,6 @@ The selected money path is hybrid sync+async:
 - All synchronous service calls must have timeouts, bounded retries with backoff/jitter, circuit breakers, and bulkheads.
 - Orders must flip readiness to refuse new traffic during shutdown while in-flight coroutine work drains or is cancelled cooperatively.
 - Inventory and Payments must persist idempotency records so duplicate events or HTTP retries return the same outcome.
+- Inventory holds must expire after 10 minutes if payment does not complete, returning the seat to available state.
 - Notification failure is a degraded mode, not a checkout failure.
 - The checkout SLOs, alerts, and tracing requirements are defined in [slo-observability.md](../operations/slo-observability.md).
