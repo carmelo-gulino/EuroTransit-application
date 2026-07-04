@@ -122,3 +122,29 @@ This gives the project a realistic external dependency, secret-management requir
 
 - **Pure internal payment mock:** Easy to implement, but too weak for an enterprise-grade target because it avoids provider credentials, external latency, provider idempotency behavior, and realistic failure handling.
 - **Live payment integration:** More realistic, but inappropriate for the project because it introduces real financial risk, compliance concerns, and unnecessary secret exposure.
+
+## ADR-007: Async Cost and Scaling Model
+
+**Decision:** Use Kotlin coroutines/flows for I/O-bound and event-driven checkout work, while keeping correctness boundaries explicit and synchronous where an immediate business decision is required.
+
+### Where Suspending Work Helps
+
+- Orders can accept checkout quickly and run reservation/payment/confirmation stages without dedicating one platform thread to each in-flight order.
+- HTTP calls from Orders to Inventory and Payments are I/O-bound. Suspending while waiting for those responses reduces blocked threads under latency or provider slowdown.
+- Kafka publishing and consuming are I/O-bound and benefit from coroutine-based backpressure, structured cancellation, and bounded concurrency.
+- Notification processing is naturally asynchronous because customer notification must not determine checkout success.
+- Graceful shutdown is easier to reason about when the Orders pipeline has an explicit coroutine scope as a failure domain and can stop accepting new work while draining or cancelling in-flight tasks.
+
+### Where Async Does Not Help
+
+- Async does not reduce CPU cost for CPU-bound work such as cryptographic verification, serialization hot spots, compression, or large in-memory transformations. Those need efficient code, bounded worker pools, or horizontal scaling.
+- Async does not remove the need for database consistency. Inventory hold creation remains a synchronous decision because the system must know whether a finite seat is held before payment proceeds.
+- Async does not make retries safe by itself. Idempotency records are still required for Orders, Inventory, and Payments.
+- Async does not replace overload control. The system still needs timeouts, circuit breakers, bulkheads, and load shedding so queues do not grow until the service collapses.
+
+### Operational Consequences
+
+- Bound coroutine concurrency for the checkout pipeline instead of allowing unbounded fan-out.
+- Propagate cancellation on SIGTERM and flip readiness before draining.
+- Track queue depth, coroutine failures, Kafka lag, and terminal order states so async work is observable.
+- Treat blocking calls inside coroutine paths as defects unless they are explicitly isolated on a bounded dispatcher.

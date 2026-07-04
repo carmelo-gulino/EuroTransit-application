@@ -5,7 +5,7 @@ This folder contains the assignment requirements and the project-owned documents
 ## Required Reference
 
 - [assignment-requirements.pdf](assignment-requirements.pdf): assignment requirements from the professors.
-- [definition-of-done.md](definition-of-done.md): operational Definition of Done.
+- [capstone-dod.md](capstone-dod.md): operational Definition of Done.
 
 ## Design
 

@@ -76,6 +76,6 @@ The selected decisions are documented in [architecture-decisions.md](../design/a
 
 ## Verification Plan
 
-- The DoD in [definition-of-done.md](../definition-of-done.md) is the release gate.
+- The DoD in [capstone-dod.md](../capstone-dod.md) is the release gate.
 - Every chaos experiment must include steady state, hypothesis, injected failure, observed dashboards/traces/logs, conclusion, and follow-up change.
 - The final demo must prove at least one live incident from injection to alert to diagnosis to recovery.
