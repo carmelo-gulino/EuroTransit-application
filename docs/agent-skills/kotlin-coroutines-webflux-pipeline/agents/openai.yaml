@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kotlin Coroutines WebFlux Pipeline"
+  short_description: "Build async EuroTransit service flows"
+  default_prompt: "Use $kotlin-coroutines-webflux-pipeline to implement or review an asynchronous EuroTransit service flow."

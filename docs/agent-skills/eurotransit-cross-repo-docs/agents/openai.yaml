@@ -1,0 +1,4 @@
+interface:
+  display_name: "EuroTransit Cross-Repo Docs"
+  short_description: "Keep EuroTransit docs aligned across repos"
+  default_prompt: "Use $eurotransit-cross-repo-docs to update EuroTransit documentation consistently across application and configuration repos."
