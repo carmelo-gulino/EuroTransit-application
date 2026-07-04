@@ -47,11 +47,12 @@ This DoD is the operational release gate for EuroTransit Marketplace. Each item 
 - [ ] Services validate the authenticated principal and enforce resource ownership or privileged scopes locally.
 - [ ] Order reads are authorized by owner identity or by an explicit operational/admin role.
 - [ ] Inventory and Payments are internal service-to-service APIs, not public endpoints, and require service credentials plus propagated user context.
-- [ ] Local development uses a mock OIDC issuer or fixed development JWTs without changing production API contracts.
+- [ ] The cluster/proof target uses Keycloak as the OIDC provider; local development may use a mock OIDC issuer or fixed development JWTs without changing production API contracts.
+- [ ] Final cluster/demo proof does not depend on mocked services or fake in-memory substitutes for core infrastructure.
 - [ ] TLS is terminated at Traefik in the cluster environment.
 - [ ] Secrets are stored through SealedSecrets or an equivalent GitOps-safe mechanism.
 - [ ] Money-path audit logs include correlation ID, principal ID, order ID, and outcome, while excluding secrets and payment details.
-- [ ] No real card data is handled; Payments is a mock authorization service.
+- [ ] No real card data or live charges are handled; Payments integrates with a provider sandbox/test API such as Stripe test mode or PayPal Sandbox.
 
 ## 6. Chaos Experiments
 

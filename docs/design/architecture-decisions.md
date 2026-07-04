@@ -86,17 +86,39 @@ Checkout is complete once the 10-minute seat hold is converted to sold, payment 
 ### Selected Option: Authenticated Public APIs with Internal Service Trust
 
 - Public traffic enters only through Traefik with TLS configured in the cluster configuration repository.
-- Customer-facing APIs require an authenticated user identity. In local development this may be a mock identity provider, but the API shape must still carry a user principal.
+- Customer-facing APIs require an authenticated user identity. The cluster/proof target uses Keycloak as the OIDC identity provider. In local development only, this may be replaced by fixed development JWTs or a mock OIDC issuer, but the API shape must still carry a user principal.
 - Checkout uses the authenticated customer identity as part of the order ownership and audit trail.
 - Order reads are authorized by ownership, with separate operational/admin access for support use cases.
 - Inventory and Payments remain internal APIs and are not exposed directly outside the cluster.
 - Secrets are managed through SealedSecrets or equivalent GitOps-safe secret mechanisms.
-- The payment service is a mock authorization service for this project and must not handle real card data.
+- The payment service integrates with a provider sandbox/test API, such as Stripe test mode or PayPal Sandbox. It must not handle real card data or live charges.
 
 ### Why This Is Better
 
-This keeps the project aligned with an enterprise-grade target while allowing a pragmatic implementation path. A mock or simplified provider can be used first, but the architecture still defines where identity is enforced and how authorization affects the money path.
+This keeps the project aligned with an enterprise-grade target while allowing a pragmatic implementation path. A mock or simplified identity provider can be used only for local development, while the cluster/proof target must use Keycloak and still define where identity is enforced and how authorization affects the money path.
 
 ### Alternative Considered
 
 - **No authentication:** This would reduce implementation work, but it leaves a major enterprise concern unspecified and weakens the design of order ownership, auditability, and payment authorization.
+
+## ADR-006: Payment Provider Integration
+
+**Decision:** Implement Payments as an adapter around a real provider sandbox/test API rather than a pure internal mock.
+
+### Selected Option: Sandbox Provider Adapter
+
+- Use a test-mode payment provider, for example Stripe test mode or PayPal Sandbox.
+- Keep provider-specific code inside the Payments service behind a narrow authorization adapter.
+- Use sandbox credentials only, loaded from environment/configuration and represented as secrets in GitOps.
+- Persist idempotency records before/around provider calls so retries do not create duplicate authorization effects.
+- Store only provider references, authorization status, idempotency key, amount, currency, order ID, and audit metadata.
+- Do not store raw card data, live credentials, bearer tokens, or provider secrets in application logs or source code.
+
+### Why This Is Better
+
+This gives the project a realistic external dependency, secret-management requirement, latency/failure mode, and audit trail without handling real money or card data. It also makes the Payments resilience and chaos tests meaningful because the service must isolate provider timeouts, declines, retries, and sandbox outages.
+
+### Alternatives Considered
+
+- **Pure internal payment mock:** Easy to implement, but too weak for an enterprise-grade target because it avoids provider credentials, external latency, provider idempotency behavior, and realistic failure handling.
+- **Live payment integration:** More realistic, but inappropriate for the project because it introduces real financial risk, compliance concerns, and unnecessary secret exposure.

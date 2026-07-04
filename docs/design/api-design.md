@@ -6,10 +6,11 @@ For the rationale behind the selected consistency, money-path, and delivery deci
 
 ## Security Boundary
 
-EuroTransit is designed as an enterprise-grade system. Public APIs must assume an authenticated user identity, even if local development starts with a mock identity provider.
+EuroTransit is designed as an enterprise-grade system. Public APIs must assume an authenticated user identity. Local development may use fixed development JWTs or a mock OIDC issuer, but the cluster/proof target uses Keycloak as the OIDC identity provider.
 
 - Traefik is the only north-south entry point and terminates TLS in the cluster environment.
 - Public APIs expect OAuth2/OIDC bearer JWTs. Tokens must carry a stable subject (`sub`), tenant or organization context when applicable, and role/scope claims.
+- The production-like cluster target uses Keycloak for OIDC. Mock identity providers and fixed JWTs are local-development substitutes only.
 - Customer-facing write APIs, especially checkout, require an authenticated customer identity.
 - `GET /api/orders/{orderId}` must only return orders owned by the authenticated customer, unless the caller has an operational/admin role.
 - Inventory and Payments APIs are internal service-to-service APIs and are not exposed directly to public clients.
@@ -36,7 +37,7 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 | Catalog | Exposes routes, schedules, products, and offers. | Synchronous read API. | Catalog is read-heavy and tolerant of stale data, so it can be scaled and deployed independently from checkout. |
 | Orders | Owns the customer-facing purchase workflow and order state. | Synchronous entry API plus asynchronous pipeline orchestration. | Orders is the money-path coordinator: it accepts checkout requests quickly and records/reports order progress. |
 | Inventory | Owns finite seat availability and time-limited seat holds. | Synchronous hold decision plus reservation events. | Inventory is the contended resource. It must create one strongly consistent hold before a seat can proceed to payment. |
-| Payments | Owns payment authorization state. | Synchronous idempotent authorization plus payment events. | Payment authorization must not double-charge under retries; an immediate success/failure decision is needed before order confirmation. |
+| Payments | Owns payment authorization state and integrates with a provider sandbox/test API. | Synchronous idempotent authorization plus payment events. | Payment authorization must not double-charge under retries; an immediate success/failure decision is needed before order confirmation. |
 | Notifications | Sends confirmations and customer updates. | Fully asynchronous event consumer. | Notification failure must not fail checkout. Kafka buffers the work until the service recovers. |
 
 ## Public APIs
@@ -77,6 +78,7 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
   - Authorizes payment for one order.
   - Internal API; callers must be trusted services such as Orders.
   - Requires an idempotency key so retries return the original authorization result instead of charging again.
+  - Calls a configured provider sandbox/test API through a Payments-owned adapter; raw card data and live charges are out of scope.
 
 ### Notifications
 
