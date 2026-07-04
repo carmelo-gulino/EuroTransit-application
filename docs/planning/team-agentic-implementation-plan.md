@@ -21,8 +21,8 @@ The roles below are **vertical ownership boundaries**, not isolated specialist l
 | Person | Role | Primary Slice | Required Platform/GitOps Ownership | Main Deliverables |
 | --- | --- | --- | --- | --- |
 | Person 1 | Technical Coordinator + Gateway/Security Slice Owner | Cross-team coordination, public API contracts, auth boundary, gateway behavior | Traefik routes/middleware, Keycloak/OIDC configuration, shared CI conventions, PR/release sequencing | Contract freeze, secure routing, local dev JWT/mock OIDC strategy, cluster Keycloak proof, review gates, integration calendar |
-| Person 2 | Orders Checkout Slice Owner | `orders` service and checkout orchestration | Orders image/build config, Orders deployment values/manifests, readiness/liveness, canary rollout | Order APIs, order lifecycle, ownership checks, orchestration clients, order events, Orders canary proof |
-| Person 3 | Inventory Consistency Slice Owner | `inventory` service and finite-seat consistency | Inventory database config, CloudNativePG integration needs, migration/init strategy, Inventory deployment values/manifests | Seat/reservation model, no-oversell guarantee, reservation idempotency, compensation endpoint, failover proof input |
+| Person 2 | Orders Checkout Slice Owner | `orders` service, checkout orchestration, and order-state database ownership | Orders image/build config, Orders deployment values/manifests, CloudNativePG order database requirements, readiness/liveness, canary rollout | Order APIs, order lifecycle, ownership checks, orchestration clients, order events, Orders canary proof |
+| Person 3 | Inventory Consistency Slice Owner | `inventory` service and finite-seat consistency | Inventory reservation-store config, migration/init strategy, Inventory deployment values/manifests | Seat/reservation model, no-oversell guarantee, reservation idempotency, compensation endpoint, failover proof input |
 | Person 4 | Payments Resilience Slice Owner | `payments` service, provider sandbox integration, and money-path resilience | Payments deployment values/manifests, Resilience4j config exposure, service routing, payment provider sandbox secrets | Payment authorization adapter, payment idempotency, timeout/retry/circuit-breaker behavior, latency chaos proof |
 | Person 5 | Customer Experience + Observability Slice Owner | React frontend, `catalog`, `notifications`, Kafka consumer proof, telemetry | Frontend image/deployment values, Catalog blue/green deployment, Notifications deployment values/manifests, Kafka topic config, dashboards/alerts/tracing | Customer UI, Catalog reads, order-status view, notification consumer, graceful degradation, RED metrics, traces, alert/demo evidence |
 
@@ -134,6 +134,7 @@ Each owner implements their slice skeleton and contract tests using mocks where 
 
 - Implement Orders API controllers and service layer.
 - Persist or model order lifecycle states.
+- Own Orders PostgreSQL order-state schema and CloudNativePG configuration requirements.
 - Enforce order ownership from authenticated principal.
 - Emit `order-placed`, `order-confirmed`, and `notification-requested`.
 - Use mock clients for Inventory and Payments until real clients are integrated.
@@ -149,7 +150,7 @@ Each owner implements their slice skeleton and contract tests using mocks where 
 - Emit `inventory-reserved` and `inventory-failed`.
 - Add concurrency tests proving no oversell.
 - Own Inventory container/build concerns and deployment values/manifests.
-- Define Inventory database configuration needs for the configuration repository.
+- Define Inventory reservation-store configuration needs for the configuration repository without confusing them with Orders' order-state database ownership.
 - Provide failover and pod-kill proof inputs for chaos experiments.
 
 ### Payments Resilience Slice
@@ -356,7 +357,7 @@ Every role has the same baseline done criteria:
 - Reservation idempotency is tested.
 - Compensation endpoint releases reservations safely.
 - Inventory events are emitted with correlation IDs.
-- Inventory deployment/database configuration is ready for the configuration repository.
+- Inventory deployment/reservation-store configuration is ready for the configuration repository.
 - Inventory pod-kill and database-failover proof expectations are documented.
 
 ### Payments Resilience Slice

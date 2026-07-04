@@ -6,11 +6,11 @@ This document records the team-owned decisions required by the assignment specif
 
 **Decision:** Use Strong Consistency, modeled as CP under CAP and PC/EC under PACELC.
 
-Inventory owns the finite seat resource. A seat must never be sold twice, even if requests are duplicated, messages are replayed, or an Inventory pod dies mid-reservation.
+Orders owns the customer order state and the required PostgreSQL order database managed through CloudNativePG. Inventory separately owns the finite seat resource and the reservation/hold state needed to enforce the no-oversell invariant. A seat must never be sold twice, even if requests are duplicated, messages are replayed, or an Inventory pod dies mid-reservation.
 
 ### Selected Option: Strong CP / PC-EC
 
-- Use PostgreSQL atomic updates or a reservation state machine as the source of truth.
+- Use PostgreSQL atomic updates or a reservation state machine as the Inventory source of truth for seat holds. This is separate from Orders' order-state database ownership.
 - Seat selection in the UI is tentative and does not reserve inventory.
 - Checkout creates a strongly consistent 10-minute hold only if the seat is available.
 - Payment is attempted only after the hold succeeds.

@@ -35,8 +35,8 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 | Service | Responsibility | Interaction Style | Why this boundary exists |
 | --- | --- | --- | --- |
 | Catalog | Exposes routes, schedules, products, and offers. | Synchronous read API. | Catalog is read-heavy and tolerant of stale data, so it can be scaled and deployed independently from checkout. |
-| Orders | Owns the customer-facing purchase workflow and order state. | Synchronous entry API plus asynchronous pipeline orchestration. | Orders is the money-path coordinator: it accepts checkout requests quickly and records/reports order progress. |
-| Inventory | Owns finite seat availability and time-limited seat holds. | Synchronous hold decision plus reservation events. | Inventory is the contended resource. It must create one strongly consistent hold before a seat can proceed to payment. |
+| Orders | Owns the customer-facing purchase workflow, order state, and the required PostgreSQL order database managed through CloudNativePG. | Synchronous entry API plus asynchronous pipeline orchestration. | Orders is the money-path coordinator: it accepts checkout requests quickly and records/reports order progress. |
+| Inventory | Owns finite seat availability and time-limited seat holds. | Synchronous hold decision plus reservation events. | Inventory is the contended resource. It must create one strongly consistent hold before a seat can proceed to payment. Its reservation store is separate from Orders' order-state ownership. |
 | Payments | Owns payment authorization state and integrates with a provider sandbox/test API. | Synchronous idempotent authorization plus payment events. | Payment authorization must not double-charge under retries; an immediate success/failure decision is needed before order confirmation. |
 | Notifications | Sends confirmations and customer updates. | Fully asynchronous event consumer. | Notification failure must not fail checkout. Kafka buffers the work until the service recovers. |
 
@@ -61,6 +61,7 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 - `GET /api/orders/{orderId}`
   - Returns the current order status: accepted, reserving, payment-pending, confirmed, failed, or cancelled.
   - Requires the authenticated customer to own the order, unless an operator/admin role is used.
+- Orders persists order state in its PostgreSQL database managed by CloudNativePG.
 
 ### Inventory
 
@@ -69,6 +70,7 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
   - Internal API; callers must be trusted services such as Orders.
   - Requires an idempotency key derived from the order id and reservation attempt.
   - Uses a strong consistency decision: the same seat cannot have two active holds.
+  - Owns reservation/seat availability state for the no-oversell invariant; this does not replace Orders' ownership of the order-state database.
 - `DELETE /api/inventory/reservations/{reservationId}`
   - Releases a hold when payment fails, the order is cancelled, or the 10-minute hold expires.
 
