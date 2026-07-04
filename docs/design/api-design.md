@@ -29,6 +29,8 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 | `POST /api/inventory/reservations` | Internal | Required service credential plus propagated user context | Orders service only; order owner context required |
 | `DELETE /api/inventory/reservations/{reservationId}` | Internal | Required service credential plus propagated user context | Orders service only; compensation for owned order |
 | `POST /api/payments/authorize` | Internal | Required service credential plus propagated user context | Orders service only; payment belongs to owned order |
+| `GET /api/notifications` | External | Required | Authenticated customer can read only their own notifications |
+| `GET /api/notifications/stream` | External | Required | Authenticated customer can receive only their own live notification events |
 
 ## Service Boundaries
 
@@ -84,8 +86,14 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 
 ### Notifications
 
-- No public synchronous API is exposed.
-- The service consumes events and sends email/SMS confirmations or failure updates.
+- The service consumes events and sends or records email/SMS confirmations and failure updates.
+- `GET /api/notifications`
+  - Returns the authenticated customer's notification history.
+  - Requires a normal bearer JWT and only returns notifications owned by the authenticated principal.
+- `GET /api/notifications/stream`
+  - Exposes live notification updates to the frontend using Server-Sent Events with `text/event-stream`.
+  - Sends only notifications owned by the authenticated principal.
+  - Is an enhancement over the stored notification history; if the stream disconnects, the frontend can fall back to `GET /api/notifications`.
 
 ## Kafka Events
 

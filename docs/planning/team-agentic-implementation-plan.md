@@ -178,6 +178,7 @@ Each owner implements their slice skeleton and contract tests using mocks where 
   - clear success/failure states.
 - Implement Catalog read APIs and own Catalog blue/green proof.
 - Implement Notifications consumer.
+- Expose authenticated notification history with `GET /api/notifications` and live frontend updates with SSE at `GET /api/notifications/stream`.
 - Add graceful degradation behavior: checkout must succeed even when Notifications is down.
 - Define correlation ID logging conventions.
 - Add Micrometer metrics and structured logs for all service owners to copy.
