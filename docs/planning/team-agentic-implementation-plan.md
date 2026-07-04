@@ -125,8 +125,8 @@ Each owner implements their slice skeleton and contract tests using mocks where 
 - Define local auth strategy: mock OIDC issuer or fixed development JWTs.
 - Define cluster/proof auth strategy: Keycloak realm, clients, roles/scopes, issuer URL, and JWKS validation.
 - Configure or specify Traefik routes:
-  - external: Catalog and Orders only;
-  - internal: Inventory, Payments, Notifications not publicly exposed.
+  - external: React frontend, Catalog, Orders, and authenticated customer notification history/SSE if implemented;
+  - internal: Inventory, Payments, and the Notifications Kafka consumer not publicly exposed.
 - Define shared deployment conventions: image names, ports, health endpoints, resource defaults, labels, and environment variable naming.
 - Document secret handling and required environment variables.
 
