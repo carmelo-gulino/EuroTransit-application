@@ -16,3 +16,15 @@ smoke-kind-keep:
     KEEP_KIND_CLUSTER=true ./scripts/smoke-kind.sh
 
 pr-check: ci-local
+
+compose-config:
+    docker compose config
+
+compose-build:
+    docker compose build
+
+compose-up:
+    docker compose up -d
+
+compose-down:
+    docker compose down
