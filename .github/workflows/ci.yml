@@ -27,12 +27,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v6.2.0
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6.2.0
+          cache: gradle
 
       - name: Build
         run: ./gradlew --no-daemon build
