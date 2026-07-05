@@ -61,6 +61,19 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: eurotransit-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./infrastructure/local/keycloak:/opt/keycloak/data/import
+
+
 volumes:
   postgres_data:
   kafka_data:
