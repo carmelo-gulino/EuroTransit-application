@@ -148,3 +148,26 @@ This gives the project a realistic external dependency, secret-management requir
 - Propagate cancellation on SIGTERM and flip readiness before draining.
 - Track queue depth, coroutine failures, Kafka lag, and terminal order states so async work is observable.
 - Treat blocking calls inside coroutine paths as defects unless they are explicitly isolated on a bounded dispatcher.
+
+## ADR-008: Money-Path Datastore Ownership
+
+**Decision:** Use separate logical PostgreSQL databases for Orders, Inventory, and Payments, with separate credentials and migrations.
+
+### Selected Option: Separate Logical Databases
+
+- Orders owns `orders_db`.
+- Inventory owns `inventory_db`.
+- Payments owns `payments_db`.
+- The databases may run on the same PostgreSQL cluster in local/proof environments.
+- Services must not read, join, or mutate another service's database directly.
+- Cross-service coordination happens through the approved HTTP APIs and Kafka events.
+
+### Why This Is Better
+
+This gives the team clear service ownership, permission isolation, migration boundaries, and idempotency storage boundaries without requiring three separate PostgreSQL clusters for the project proof.
+
+### Alternatives Considered
+
+- **Separate schemas in one database:** simpler to set up, but weaker isolation and easier accidental cross-schema joins.
+- **One shared schema:** fastest initially, but it breaks service ownership and makes the money-path consistency and idempotency boundaries harder to defend.
+- **Three PostgreSQL clusters:** strongest infrastructure isolation, but too much operational overhead for the project proof.

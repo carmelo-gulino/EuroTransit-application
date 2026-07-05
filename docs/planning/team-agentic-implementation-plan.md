@@ -42,14 +42,16 @@ The roles are parallelizable but not independent. The main dependency is the sha
 
 ## Phase 0: Contract Freeze
 
-Before feature implementation starts, the whole team must agree on these contracts. This should be short and concrete; the output should be committed under `docs/contracts/` or directly in the relevant service test fixtures.
+Before feature implementation starts, the whole team must agree on these contracts. This should be short and concrete; the canonical decisions live in [api-design.md](../design/api-design.md) and service test fixtures should reflect the same contracts.
 
 ### Shared HTTP Headers
 
 - `Authorization`: OAuth2/OIDC bearer JWT for external APIs.
-- `X-Correlation-Id`: required on inbound requests; generated at the gateway if missing.
+- `X-Correlation-Id`: propagated through all services and Kafka events; generated at the gateway if missing on public inbound requests.
 - `Idempotency-Key`: required for order placement, inventory reservation, and payment authorization.
 - `X-Service-Name` or equivalent service identity mechanism for internal calls in local development.
+
+Frontend-generated idempotency keys terminate at Orders. Orders generates operation-specific downstream keys for Inventory reservations and Payments authorization.
 
 ### Authentication and Authorization Contract
 
@@ -60,6 +62,16 @@ Before feature implementation starts, the whole team must agree on these contrac
 - Services must enforce local authorization; gateway checks are not sufficient.
 - The cluster/proof target uses Keycloak as the OIDC identity provider.
 - Fixed development JWTs or mock OIDC issuers are allowed only for local development.
+- The JWT `sub` claim is the authoritative `principalId`; `email` is optional metadata.
+- Customer-to-customer order reads return `404` rather than revealing another customer's order.
+
+### Data Ownership Contract
+
+- Orders owns `orders_db`.
+- Inventory owns `inventory_db`.
+- Payments owns `payments_db`.
+- These may share one PostgreSQL cluster in local/proof environments, but credentials, migrations, and logical databases remain separate.
+- Services must not read, join, or mutate another service's database directly.
 
 ### Money-Path API Contracts
 
@@ -81,6 +93,13 @@ Before feature implementation starts, the whole team must agree on these contrac
   - Never double-charges on retries.
   - Uses a configured provider sandbox/test API such as Stripe test mode or PayPal Sandbox through the Payments service adapter.
 
+Idempotency retention:
+
+- Orders checkout idempotency records: 24 hours.
+- Inventory reservation idempotency records: 30 minutes.
+- Payments authorization idempotency records: 24 hours.
+- Inventory seat holds: 10 minutes; idempotency retention must not extend or renew the hold.
+
 ### Kafka Event Contracts
 
 - `order-placed`
@@ -99,7 +118,7 @@ Every event must include:
 - `correlationId`
 - `orderId`
 - `principalId` when user context is needed downstream
-- payload version
+- `schemaVersion`
 
 Events must not include secrets, raw payment details, or bearer tokens.
 
