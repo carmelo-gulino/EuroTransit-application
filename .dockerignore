@@ -1,0 +1,11 @@
+.git
+.gradle
+.idea
+build
+buildSrc/build
+**/build/classes
+**/build/kotlin
+**/build/resources
+**/build/tmp
+**/build/resolvedMainClassName
+**/build/libs/*-plain.jar
