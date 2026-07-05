@@ -2,6 +2,111 @@ version: '3.8'
 
 services:
   # ==========================================
+  # Application Services
+  # ==========================================
+  catalog:
+    build:
+      context: .
+      args:
+        SERVICE: catalog
+    image: eurotransit/catalog:local
+    container_name: eurotransit-catalog
+    environment:
+      SERVER_PORT: 8080
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+    expose:
+      - "8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.catalog.rule=PathPrefix(`/api/catalog`)"
+      - "traefik.http.routers.catalog.entrypoints=web"
+      - "traefik.http.services.catalog.loadbalancer.server.port=8080"
+
+  orders:
+    build:
+      context: .
+      args:
+        SERVICE: orders
+    image: eurotransit/orders:local
+    container_name: eurotransit-orders
+    environment:
+      SERVER_PORT: 8080
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/eurotransit
+      SPRING_R2DBC_USERNAME: eurotransit
+      SPRING_R2DBC_PASSWORD: password
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orders.rule=PathPrefix(`/api/orders`)"
+      - "traefik.http.routers.orders.entrypoints=web"
+      - "traefik.http.routers.orders.middlewares=local-auth-boundary@docker"
+      - "traefik.http.middlewares.local-auth-boundary.headers.customrequestheaders.X-EuroTransit-Auth-Boundary=service-enforced-local-keycloak"
+      - "traefik.http.services.orders.loadbalancer.server.port=8080"
+
+  inventory:
+    build:
+      context: .
+      args:
+        SERVICE: inventory
+    image: eurotransit/inventory:local
+    container_name: eurotransit-inventory
+    environment:
+      SERVER_PORT: 8080
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/eurotransit
+      SPRING_R2DBC_USERNAME: eurotransit
+      SPRING_R2DBC_PASSWORD: password
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=false"
+
+  payments:
+    build:
+      context: .
+      args:
+        SERVICE: payments
+    image: eurotransit/payments:local
+    container_name: eurotransit-payments
+    environment:
+      SERVER_PORT: 8080
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+    expose:
+      - "8080"
+    labels:
+      - "traefik.enable=false"
+
+  notifications:
+    build:
+      context: .
+      args:
+        SERVICE: notifications
+    image: eurotransit/notifications:local
+    container_name: eurotransit-notifications
+    environment:
+      SERVER_PORT: 8080
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+    expose:
+      - "8080"
+    labels:
+      - "traefik.enable=false"
+
+  # ==========================================
   # Infrastructure Services
   # ==========================================
   postgres:
@@ -60,6 +165,8 @@ services:
       - "8080:8080" # Traefik dashboard
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=false"
 
 volumes:
   postgres_data:
