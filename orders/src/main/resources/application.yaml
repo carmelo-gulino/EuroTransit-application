@@ -33,4 +33,4 @@ eurotransit:
     inventory:
       url: http://localhost:8082
     payments:
-      url: http://localhost:8083
+      url: http://localhost:8085
