@@ -9,6 +9,7 @@ COPY gradlew .
 COPY build.gradle.kts settings.gradle.kts ./
 COPY buildSrc buildSrc
 COPY catalog/build.gradle.kts catalog/build.gradle.kts
+COPY observability observability
 COPY inventory/build.gradle.kts inventory/build.gradle.kts
 COPY notifications/build.gradle.kts notifications/build.gradle.kts
 COPY orders/build.gradle.kts orders/build.gradle.kts
