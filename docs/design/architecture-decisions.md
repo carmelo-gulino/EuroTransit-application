@@ -171,3 +171,25 @@ This gives the team clear service ownership, permission isolation, migration bou
 - **Separate schemas in one database:** simpler to set up, but weaker isolation and easier accidental cross-schema joins.
 - **One shared schema:** fastest initially, but it breaks service ownership and makes the money-path consistency and idempotency boundaries harder to defend.
 - **Three PostgreSQL clusters:** strongest infrastructure isolation, but too much operational overhead for the project proof.
+
+## ADR-009: Schema Migrations via Embedded Flyway
+
+**Decision:** Manage each service's schema with versioned Flyway migrations executed embedded in the service at startup (before it serves traffic). The application keeps using R2DBC at runtime; a blocking JDBC driver is added solely for Flyway and is used only during bootstrap.
+
+### Selected Option: Embedded Flyway
+
+- Versioned SQL migrations live with the code in `src/main/resources/db/migration` (`V1__init.sql`, `V2__…`), tracked in the `flyway_schema_history` table.
+- Flyway runs during startup, before WebFlux accepts requests; there is no separate migration Job or init container.
+- Connection parts are externalized as env vars (see the Database conventions), so Flyway (JDBC) and R2DBC (runtime) build their URLs from the same source.
+
+### Why This Is Better
+
+- Ordered, incremental, checksummed schema evolution — which an unversioned `schema.sql` cannot provide once tables must be altered.
+- A single deployable artifact and the **same** migration mechanism locally and in the cluster.
+- The blocking JDBC driver runs only at startup, off the request path, so it does not violate the "no blocking on event-loop threads" rule (ADR-005 / coroutine conventions); it is inert once WebFlux is serving.
+
+### Alternatives Considered
+
+- **R2DBC `ResourceDatabasePopulator` + `schema.sql`:** no versioning, ordering, or history; cannot apply incremental changes to an existing schema. (This was the initial approach; see `agent-log.md`.)
+- **Flyway/Liquibase in a Kubernetes Job or init container:** keeps the blocking driver out of the app, but adds moving parts (image/ConfigMap delivery of SQL) and makes local and cluster use diverge.
+- **Liquibase instead of Flyway:** native rollback and dialect abstraction, but heavier and unnecessary for a single Postgres dialect with plain SQL.
