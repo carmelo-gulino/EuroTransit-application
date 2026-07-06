@@ -1,13 +1,13 @@
 package it.polito.cpo
 
+import it.polito.cpo.security.SecurityConfig
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient
 import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder
 import org.springframework.test.web.reactive.server.WebTestClient
@@ -18,15 +18,20 @@ import org.springframework.web.bind.annotation.RestController
 import reactor.core.publisher.Mono
 import java.time.Instant
 
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = [
-        "management.endpoint.health.probes.enabled=true",
-        "management.health.r2dbc.enabled=false",
-    ],
-)
-@AutoConfigureWebTestClient
-@Import(OrdersSecurityTestConfiguration::class)
+/**
+ * Sliced security test. It loads ONLY the real [SecurityConfig] filter chain plus a stub controller,
+ * not the full application. This is deliberate:
+ *
+ *  - The full-context variant (@SpringBootTest) also component-scans the real OrderController, which
+ *    maps the same routes as the stub -> "Ambiguous mapping" and the context fails to load.
+ *  - A full context would also boot Flyway/R2DBC/Kafka, requiring a database that CI does not have.
+ *
+ * `controllers = [OrdersSecurityProbeController]` excludes the real controller from the slice, and the
+ * stub returns canned responses so we assert the SECURITY rules in isolation (not business behaviour:
+ * the real controller returns 202 and requires a UUID path, which is orthogonal to these checks).
+ */
+@WebFluxTest(controllers = [OrdersSecurityProbeController::class])
+@Import(SecurityConfig::class, OrdersSecurityTestConfiguration::class)
 class OrdersSecurityConfigTests @Autowired constructor(
     private val webTestClient: WebTestClient,
 ) {
@@ -102,6 +107,11 @@ class OrdersSecurityProbeController {
 
     @GetMapping("/api/orders/{orderId}")
     fun readOrder(@PathVariable orderId: String): Map<String, String> = mapOf("orderId" to orderId)
+
+    // Stands in for the actuator health endpoint, which is not booted in this web slice.
+    // It lets us verify the SecurityConfig rule that /actuator/health/** is permitAll.
+    @GetMapping("/actuator/health/liveness")
+    fun liveness(): Map<String, String> = mapOf("status" to "UP")
 }
 
 private fun testJwt(token: String): Jwt {

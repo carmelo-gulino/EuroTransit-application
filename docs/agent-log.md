@@ -69,3 +69,11 @@ This log is intentionally required by the assignment. It records concrete cases 
 - **Why it was wrong:** Not caught by any test (no test asserted travel time), and would have shipped a negative duration to the frontend for every overnight route — a subtly wrong artifact of exactly the kind this log exists to catch.
 - **How the team detected it:** Manual read-through of the seed data while reviewing the diff before running tests, not by a failing assertion — flagging that travel-time correctness has no test coverage yet.
 - **Correction:** Added `.plusDays(1)` when the computed duration is negative. Follow-up: add a unit test for `Route.travelTime` on overnight routes before Catalog is considered done.
+
+## Case 9: Missing Versioned Database Migrations Strategy
+
+- **Owner:** Person 2 (Orders Checkout)
+- **Agent output:** A custom `R2dbcConfiguration` that ran a plain, unversioned `schema.sql` using Spring's `ConnectionFactoryInitializer`.
+- **Why it was wrong:** A single idempotent `schema.sql` cannot handle ordered, incremental schema evolutions (e.g., `V1`, `V2`) needed for long-term production maintenance.
+- **How the team caught it:** The developer realized that maintaining 10+ sequential migrations with a single file technique was unscalable.
+- **Correction:** Dropped the custom R2DBC initializer and integrated embedded Flyway with the PostgreSQL JDBC driver. Externalized DB credentials via environment variables so both Flyway and R2DBC can connect seamlessly.
