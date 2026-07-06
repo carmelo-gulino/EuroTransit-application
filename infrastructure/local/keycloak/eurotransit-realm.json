@@ -1,0 +1,68 @@
+{
+  "realm": "eurotransit",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "eurotransit-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "webOrigins": ["*"],
+      "redirectUris": ["*"]
+    },
+    {
+      "clientId": "eurotransit-backend",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "customer",
+        "description": "Customer role"
+      },
+      {
+        "name": "operations",
+        "description": "Operations role"
+      },
+      {
+        "name": "service",
+        "description": "Internal service-to-service role"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["customer"]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["operations"]
+    }
+  ]
+}
