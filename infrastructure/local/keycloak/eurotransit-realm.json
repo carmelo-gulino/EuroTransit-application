@@ -35,6 +35,8 @@
     {
       "username": "alice",
       "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
       "credentials": [
         {
           "type": "password",
@@ -47,6 +49,8 @@
     {
       "username": "admin",
       "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
       "credentials": [
         {
           "type": "password",
