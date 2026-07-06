@@ -67,8 +67,8 @@ jobs:
           build-args: SERVICE=catalog
           tags: eurotransit/catalog:smoke
           load: true
-          cache-from: type=gha,scope=smoke-catalog
-          cache-to: type=gha,mode=max,scope=smoke-catalog
+          cache-from: ${{ env.ACT == 'true' && '' || 'type=gha,scope=smoke-catalog' }}
+          cache-to: ${{ env.ACT == 'true' && '' || 'type=gha,mode=max,scope=smoke-catalog' }}
 
       - name: Build Orders
         uses: docker/build-push-action@v5
@@ -77,8 +77,8 @@ jobs:
           build-args: SERVICE=orders
           tags: eurotransit/orders:smoke
           load: true
-          cache-from: type=gha,scope=smoke-orders
-          cache-to: type=gha,mode=max,scope=smoke-orders
+          cache-from: ${{ env.ACT == 'true' && '' || 'type=gha,scope=smoke-orders' }}
+          cache-to: ${{ env.ACT == 'true' && '' || 'type=gha,mode=max,scope=smoke-orders' }}
 
       - name: Build Inventory
         uses: docker/build-push-action@v5
@@ -87,8 +87,8 @@ jobs:
           build-args: SERVICE=inventory
           tags: eurotransit/inventory:smoke
           load: true
-          cache-from: type=gha,scope=smoke-inventory
-          cache-to: type=gha,mode=max,scope=smoke-inventory
+          cache-from: ${{ env.ACT == 'true' && '' || 'type=gha,scope=smoke-inventory' }}
+          cache-to: ${{ env.ACT == 'true' && '' || 'type=gha,mode=max,scope=smoke-inventory' }}
 
       - name: Build Payments
         uses: docker/build-push-action@v5
@@ -97,8 +97,8 @@ jobs:
           build-args: SERVICE=payments
           tags: eurotransit/payments:smoke
           load: true
-          cache-from: type=gha,scope=smoke-payments
-          cache-to: type=gha,mode=max,scope=smoke-payments
+          cache-from: ${{ env.ACT == 'true' && '' || 'type=gha,scope=smoke-payments' }}
+          cache-to: ${{ env.ACT == 'true' && '' || 'type=gha,mode=max,scope=smoke-payments' }}
 
       - name: Build Notifications
         uses: docker/build-push-action@v5
@@ -107,8 +107,8 @@ jobs:
           build-args: SERVICE=notifications
           tags: eurotransit/notifications:smoke
           load: true
-          cache-from: type=gha,scope=smoke-notifications
-          cache-to: type=gha,mode=max,scope=smoke-notifications
+          cache-from: ${{ env.ACT == 'true' && '' || 'type=gha,scope=smoke-notifications' }}
+          cache-to: ${{ env.ACT == 'true' && '' || 'type=gha,mode=max,scope=smoke-notifications' }}
 
       - name: Create kind cluster
         uses: helm/kind-action@v1.12.0
