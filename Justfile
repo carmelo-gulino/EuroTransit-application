@@ -10,10 +10,7 @@ ci-local:
     act pull_request -j build
 
 smoke-kind:
-    ./scripts/smoke-kind.sh
-
-smoke-kind-keep:
-    KEEP_KIND_CLUSTER=true ./scripts/smoke-kind.sh
+    act pull_request -j kind-smoke
 
 pr-check: ci-local
 
