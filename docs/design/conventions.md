@@ -26,9 +26,22 @@ Use the following standard environment variable names across all services to mai
 - `SPRING_PROFILES_ACTIVE`: Use `local` for Docker Compose, `cluster` for Kubernetes.
 
 ### Database (PostgreSQL)
-- `SPRING_R2DBC_URL`: Format `r2dbc:postgresql://<host>:<port>/<db>`
-- `SPRING_R2DBC_USERNAME`
-- `SPRING_R2DBC_PASSWORD`
+
+Provide the connection as discrete parts, not as a full URL. A service that persists data needs
+two connection strings for the same database — the reactive runtime URL (R2DBC) and, where Flyway
+manages the schema, a migration URL (JDBC) — and both are composed from these shared parts. The
+parts also map 1:1 to the keys of the CloudNativePG-generated app secret (`host`, `port`, `dbname`,
+`username`, `password`), so they can be wired straight from `secretKeyRef`.
+
+- `DB_HOST`: database host (in cluster, the CloudNativePG read-write service, e.g. `orders-db-rw`)
+- `DB_PORT`: database port (default `5432`)
+- `DB_NAME`: logical database name
+- `DB_USER`: database username
+- `DB_PASSWORD`: database password
+
+The application composes the URLs from these parts, for example:
+- R2DBC (runtime): `r2dbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}`
+- Flyway (startup, JDBC): `jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}`
 
 ### Kafka
 - `KAFKA_BOOTSTRAP_SERVERS`
