@@ -28,6 +28,10 @@
       {
         "name": "operations",
         "description": "Operations role"
+      },
+      {
+        "name": "service",
+        "description": "Internal service-to-service role"
       }
     ]
   },
