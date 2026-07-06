@@ -1,27 +1,39 @@
 package it.polito.cpo
 
+import it.polito.cpo.security.SecurityConfig
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest
 import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder
 import org.springframework.test.web.reactive.server.WebTestClient
-import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.reactive.function.server.RouterFunction
+import org.springframework.web.reactive.function.server.ServerResponse
+import org.springframework.web.reactive.function.server.router
 import reactor.core.publisher.Mono
 import java.time.Instant
 
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = ["management.endpoint.health.probes.enabled=true"],
-)
-@AutoConfigureWebTestClient
-@Import(NotificationsSecurityTestConfiguration::class)
+/**
+ * Sliced security test. Loads ONLY the real [SecurityConfig] filter chain plus stub routes,
+ * not the full application — deliberately, and pre-emptively:
+ *
+ *  - A full-context `@SpringBootTest` would also component-scan the real NotificationController,
+ *    which maps `GET /api/notifications` — the same route the stub needs — producing an
+ *    "Ambiguous mapping" and a failed context. (Catalog already hit and fixed this once.)
+ *
+ * The stub routes are a [RouterFunction] bean, not an annotated `@RestController`: annotated
+ * controllers in package `it.polito.cpo` are auto component-scanned by any full-context test in
+ * this module, which would reintroduce the collision. A `@Bean` RouterFunction only exists when
+ * this `@TestConfiguration` is `@Import`ed, so it never leaks. `controllers = [marker]` keeps the
+ * real controller out of the `@WebFluxTest` slice too.
+ */
+@WebFluxTest(controllers = [NotificationsSecurityProbeMarkerController::class])
+@Import(SecurityConfig::class, NotificationsSecurityTestConfiguration::class)
 class NotificationsSecurityConfigTests @Autowired constructor(
     private val webTestClient: WebTestClient,
 ) {
@@ -77,15 +89,16 @@ class NotificationsSecurityTestConfiguration {
         ReactiveJwtDecoder { token -> Mono.just(testJwt(token)) }
 
     @Bean
-    fun notificationsSecurityProbeController(): NotificationsSecurityProbeController =
-        NotificationsSecurityProbeController()
+    fun notificationsSecurityProbeRoutes(): RouterFunction<ServerResponse> = router {
+        GET("/api/notifications") { ServerResponse.ok().bodyValue(mapOf("status" to "ok")) }
+        // Stands in for the actuator health endpoint, not booted in this web slice.
+        GET("/actuator/health/liveness") { ServerResponse.ok().bodyValue(mapOf("status" to "UP")) }
+    }
 }
 
+// Empty on purpose: gives @WebFluxTest a controller to slice around without mapping any route.
 @RestController
-class NotificationsSecurityProbeController {
-    @GetMapping("/api/notifications")
-    fun notifications(): Map<String, String> = mapOf("status" to "ok")
-}
+class NotificationsSecurityProbeMarkerController
 
 private fun testJwt(token: String): Jwt {
     val roles = when (token) {
