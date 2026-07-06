@@ -43,7 +43,11 @@ kind export kubeconfig --name "$CLUSTER_NAME"
 for service in "${SERVICES[@]}"; do
   image="eurotransit/${service}:smoke"
   echo "Building image: $image"
-  docker build --build-arg "SERVICE=$service" -t "$image" .
+  if [[ "${GITHUB_ACTIONS:-false}" == "true" ]]; then
+    docker buildx build --build-arg "SERVICE=$service" -t "$image" --cache-from "type=gha,scope=smoke-$service" --cache-to "type=gha,mode=max,scope=smoke-$service" --load .
+  else
+    docker build --build-arg "SERVICE=$service" -t "$image" .
+  fi
   echo "Loading image into kind: $image"
   kind load docker-image "$image" --name "$CLUSTER_NAME"
 done
