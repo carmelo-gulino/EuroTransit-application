@@ -2,8 +2,77 @@
 
 This log is intentionally required by the assignment. It records concrete cases where an agent-generated artifact was wrong, unsafe, or incomplete, and how the team corrected it.
 
-## Case 1: Missing Versioned Database Migrations Strategy
+## Case 1: Liveness Probe Checked Downstream Dependency
 
+- **Agent output:** A liveness probe failed when Kafka or Postgres was unavailable.
+- **Why it was wrong:** Liveness should indicate whether the process is stuck, not whether a dependency is transiently down. This could cause restart loops during dependency incidents.
+- **How the team caught it:** Review against the resilience requirements and probe design checklist.
+- **Correction:** Move dependency checks to readiness or custom health indicators. Keep liveness local to process health.
+
+## Case 2: Cause-Based CPU Alert Instead of User Symptom Alert
+
+- **Agent output:** An alert fired on high CPU usage for Orders.
+- **Why it was wrong:** The assignment requires symptom-based alerts tied to SLOs. CPU alone does not prove user-visible failure.
+- **How the team caught it:** SLO review against `operations/slo-observability.md`.
+- **Correction:** Replace with checkout success-rate burn and checkout latency alerts. Keep CPU on dashboards for diagnosis.
+
+## Case 3: Non-Idempotent Kafka Consumer
+
+- **Agent output:** A consumer applied reservation/payment side effects every time an event was delivered.
+- **Why it was wrong:** Kafka delivery may duplicate messages. The money path must not double-reserve or double-charge.
+- **How the team caught it:** Chaos experiment design for duplicate events and pod kill mid-reservation.
+- **Correction:** Add idempotency records keyed by order/reservation/payment attempt and return the original result for duplicate deliveries.
+
+## Case 4: Over-Permissive Delivery ServiceAccount
+
+- **Agent output:** A generated ServiceAccount had broad namespace write privileges.
+- **Why it was wrong:** The agent is inside the delivery loop and must have limited blast radius.
+- **How the team caught it:** RBAC review in `governance/agent-governance.md`.
+- **Correction:** Scope permissions to the minimum resources required and require human review before config repo merge.
+
+## Case 5: Wrong Package for WebClientCustomizer (Spring Boot 4)
+
+- **Date:** 2026-07-06
+- **Owner:** Person 5 (Customer Experience + Observability)
+- **Prompt/task:** Implement the shared `:observability` module, including a `WebClientCustomizer` that propagates `X-Correlation-Id`/`X-Service-Name` on outgoing calls.
+- **Agent output:** Imported `org.springframework.boot.web.reactive.function.client.WebClientCustomizer`, the Spring Boot 3 location, without checking the actual Boot version in use.
+- **Why it was wrong:** The project runs Spring Boot 4.0.7, which moved the class into a separate `spring-boot-webclient` artifact not pulled in transitively by `spring-boot-starter-webflux`. The build failed with "Unresolved reference".
+- **How the team detected it:** `./gradlew :observability:compileKotlin` failed immediately; grepped the Gradle module cache for the class to find its real Boot 4 location and artifact.
+- **Correction:** Added `implementation("org.springframework.boot:spring-boot-webclient")` to `observability/build.gradle.kts` and fixed the import.
+
+## Case 6: Test Resource Shadowed Main Configuration
+
+- **Date:** 2026-07-06
+- **Owner:** Person 5
+- **Prompt/task:** Add a `src/test/resources/application.yaml` override to disable tracing export noise during Catalog tests.
+- **Agent output:** Created `catalog/src/test/resources/application.yaml` as a full config file.
+- **Why it was wrong:** Gradle puts test resources ahead of main resources on the test classpath, so this file completely replaced (not merged with) `src/main/resources/application.yaml` — `spring.application.name` and `server.port` disappeared, and Spring failed to resolve `${spring.application.name}` in a metrics tag, throwing `PlaceholderResolutionException` during context startup.
+- **How the team detected it:** `./gradlew :catalog:test` failed to load the Spring context; stack trace pointed at placeholder resolution, not at the test logic.
+- **Correction:** Renamed the file to `application-test.yaml` and activated it explicitly via `@ActiveProfiles("test")`, so it layers on top of the main config instead of replacing it. Documented the pitfall in `docs/design/observability-conventions.md` so other owners don't repeat it.
+
+## Case 7: Missing @AutoConfigureMetrics in Prometheus Endpoint Test
+
+- **Date:** 2026-07-06
+- **Owner:** Person 5
+- **Prompt/task:** Write a Catalog test asserting `/actuator/prometheus` exposes `http_server_requests` after an API call.
+- **Agent output:** A plain `@SpringBootTest` calling `/actuator/prometheus` and expecting 200.
+- **Why it was wrong:** Spring Boot 4 test support disables metrics export by default in test contexts (`DisableMetricsExportContextCustomizer`), so the endpoint returned 404 even though the code was correct — a silent test gap that would have passed review as "prometheus endpoint exists" while never actually exercising it.
+- **How the team detected it:** Ran the test, got `404 NOT_FOUND` instead of the expected assertion failure; had to trace it to the Boot 4 test auto-configuration rather than application code.
+- **Correction:** Added `@AutoConfigureMetrics` (and `@AutoConfigureWebTestClient` for the constructor-injected `WebTestClient`, which needed the same explicit opt-in) to the test class.
+
+## Case 8: Overlapping Night Route Produced Negative Travel Time
+
+- **Date:** 2026-07-06
+- **Owner:** Person 5
+- **Prompt/task:** Seed the in-memory Catalog repository with example routes, including an overnight sleeper train.
+- **Agent output:** A `Route.travelTime` computed as `Duration.between(departureTime, arrivalTime)` using only `LocalTime` (no date), which is negative whenever arrival is earlier in the clock than departure (e.g. a 19:20 departure arriving 08:42 the next day).
+- **Why it was wrong:** Not caught by any test (no test asserted travel time), and would have shipped a negative duration to the frontend for every overnight route — a subtly wrong artifact of exactly the kind this log exists to catch.
+- **How the team detected it:** Manual read-through of the seed data while reviewing the diff before running tests, not by a failing assertion — flagging that travel-time correctness has no test coverage yet.
+- **Correction:** Added `.plusDays(1)` when the computed duration is negative. Follow-up: add a unit test for `Route.travelTime` on overnight routes before Catalog is considered done.
+
+## Case 9: Missing Versioned Database Migrations Strategy
+
+- **Owner:** Person 2 (Orders Checkout)
 - **Agent output:** A custom `R2dbcConfiguration` that ran a plain, unversioned `schema.sql` using Spring's `ConnectionFactoryInitializer`.
 - **Why it was wrong:** A single idempotent `schema.sql` cannot handle ordered, incremental schema evolutions (e.g., `V1`, `V2`) needed for long-term production maintenance.
 - **How the team caught it:** The developer realized that maintaining 10+ sequential migrations with a single file technique was unscalable.

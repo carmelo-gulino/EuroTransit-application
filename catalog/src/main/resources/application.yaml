@@ -1,6 +1,9 @@
 spring:
   application:
     name: catalog
+  reactor:
+    # Propagate the Reactor context (correlationId) into the logging MDC.
+    context-propagation: auto
   security:
     oauth2:
       resourceserver:
@@ -11,7 +14,36 @@ spring:
 server:
   port: 8081
 
+logging:
+  structured:
+    format:
+      # Structured JSON logs (Elastic Common Schema); includes MDC and trace/span ids.
+      console: ecs
+
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        # Histogram buckets so Prometheus can compute p95/p99 for the checkout SLOs.
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
   otlp:
     metrics:
       export:

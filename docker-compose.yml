@@ -191,6 +191,44 @@ services:
       - ./infrastructure/local/keycloak:/opt/keycloak/data/import
 
 
+  # ==========================================
+  # Local Observability Stack
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:v3.4.1
+    container_name: eurotransit-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  tempo:
+    image: grafana/tempo:2.7.2
+    container_name: eurotransit-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    ports:
+      - "4318:4318" # OTLP HTTP ingest
+      - "3200:3200" # Tempo query API
+    volumes:
+      - ./docker/observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+
+  grafana:
+    image: grafana/grafana:11.6.1
+    container_name: eurotransit-grafana
+    environment:
+      # Local development only: no login screen.
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./docker/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - tempo
+
 volumes:
   postgres_data:
   kafka_data:

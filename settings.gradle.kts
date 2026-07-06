@@ -5,6 +5,7 @@ plugins {
 rootProject.name = "EuroTransit-application"
 
 include("catalog")
+include("observability")
 include("orders")
 include("inventory")
 include("notifications")
