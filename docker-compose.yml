@@ -37,9 +37,17 @@ services:
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
       MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
-      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/eurotransit
-      SPRING_R2DBC_USERNAME: eurotransit
-      SPRING_R2DBC_PASSWORD: password
+      # DB connection parts: application.yaml composes BOTH the R2DBC (runtime) and the
+      # Flyway (startup/JDBC) URLs from these. Setting only SPRING_R2DBC_URL would leave
+      # Flyway on its localhost default and it would fail to connect. See conventions.md.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: eurotransit
+      DB_USER: eurotransit
+      DB_PASSWORD: password
+      # In-network broker (compose PLAINTEXT listener); without it the producer falls back
+      # to localhost, which does not resolve inside a container.
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
     expose:
