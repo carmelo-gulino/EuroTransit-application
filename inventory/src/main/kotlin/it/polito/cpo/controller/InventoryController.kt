@@ -1,7 +1,8 @@
 package it.polito.cpo.controller
 
-import it.polito.cpo.dto.ReservationRequest
-import it.polito.cpo.dto.ReservationResponse
+import it.polito.cpo.contracts.inventory.ReservationRequest
+import it.polito.cpo.contracts.inventory.ReservationResponse
+import it.polito.cpo.contracts.inventory.ReservationStatus
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -21,7 +22,7 @@ class InventoryController {
         // Federico's Orders service will use this to test its pipeline.
         val response = ReservationResponse(
             reservationId = UUID.randomUUID().toString(),
-            status = "HELD",
+            status = ReservationStatus.HELD,
             expiresAt = LocalDateTime.now().plusMinutes(10)
         )
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
