@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS payment_authorizations (
     currency VARCHAR(10) NOT NULL,
     status VARCHAR(50) NOT NULL,
     provider_reference VARCHAR(255),
+    error_code VARCHAR(255),
     idempotency_key VARCHAR(255) REFERENCES idempotency_records(idempotency_key),
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
