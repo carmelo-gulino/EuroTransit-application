@@ -8,7 +8,8 @@ import java.util.UUID
 data class CheckoutRequest(
     val routeId: String,
     val seats: List<String>,
-    val totalAmount: BigDecimal
+    val totalAmount: BigDecimal,
+    val paymentMethodToken: String
 )
 
 data class CheckoutResponse(

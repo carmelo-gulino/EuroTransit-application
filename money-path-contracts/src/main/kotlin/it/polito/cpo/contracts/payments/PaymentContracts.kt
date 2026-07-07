@@ -7,14 +7,16 @@ import java.util.UUID
 // orders -> payments : POST /api/payments/authorize (Idempotency-Key header)
 data class PaymentRequest(
     val orderId: UUID,
+    val principalId: String,
     val amount: BigDecimal,
-    val idempotencyKey: String
+    val currency: String,
+    val paymentMethodToken: String
 )
 
-enum class PaymentStatus { AUTHORIZED, DECLINED }
+enum class PaymentStatus { AUTHORIZED, DECLINED, CONFLICT, DEPENDENCY_FAILED }
 
 data class PaymentResponse(
-    val paymentId: String,
     val status: PaymentStatus,
-    val authorizedAt: LocalDateTime
+    val providerReference: String?,
+    val errorCode: String? = null
 )
