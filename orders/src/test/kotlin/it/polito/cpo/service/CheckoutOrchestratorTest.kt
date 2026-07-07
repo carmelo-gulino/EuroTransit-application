@@ -2,16 +2,18 @@ package it.polito.cpo.service
 
 import it.polito.cpo.client.InventoryClient
 import it.polito.cpo.client.PaymentClient
-import it.polito.cpo.client.dtos.PaymentRequest
-import it.polito.cpo.client.dtos.PaymentResponse
-import it.polito.cpo.client.dtos.ReservationRequest
-import it.polito.cpo.client.dtos.ReservationResponse
+import it.polito.cpo.contracts.payments.PaymentRequest
+import it.polito.cpo.contracts.payments.PaymentResponse
+import it.polito.cpo.contracts.payments.PaymentStatus
+import it.polito.cpo.contracts.inventory.ReservationRequest
+import it.polito.cpo.contracts.inventory.ReservationResponse
+import it.polito.cpo.contracts.inventory.ReservationStatus
 import it.polito.cpo.controller.dtos.CheckoutRequest
 import it.polito.cpo.controller.dtos.CheckoutResponse
 import it.polito.cpo.event.KafkaEventPublisher
-import it.polito.cpo.event.dtos.NotificationRequestedEvent
-import it.polito.cpo.event.dtos.OrderConfirmedEvent
-import it.polito.cpo.event.dtos.OrderPlacedEvent
+import it.polito.cpo.contracts.events.NotificationRequestedEvent
+import it.polito.cpo.contracts.events.OrderConfirmedEvent
+import it.polito.cpo.contracts.events.OrderPlacedEvent
 import it.polito.cpo.model.IdempotentRequest
 import it.polito.cpo.model.Order
 import it.polito.cpo.model.OrderStatus
@@ -67,14 +69,14 @@ class CheckoutOrchestratorTest {
         }
     }
 
-    private class StubInventoryClient(private val status: String = "HELD") : InventoryClient {
+    private class StubInventoryClient(private val status: ReservationStatus = ReservationStatus.HELD) : InventoryClient {
         override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String): ReservationResponse =
             ReservationResponse("res-1", status, LocalDateTime.now().plusMinutes(10))
 
         override suspend fun releaseSeats(reservationId: String, idempotencyKey: String) {}
     }
 
-    private class StubPaymentClient(private val status: String = "AUTHORIZED") : PaymentClient {
+    private class StubPaymentClient(private val status: PaymentStatus = PaymentStatus.AUTHORIZED) : PaymentClient {
         override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse =
             PaymentResponse("pay-1", status, LocalDateTime.now())
     }

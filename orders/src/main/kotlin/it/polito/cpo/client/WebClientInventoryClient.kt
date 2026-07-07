@@ -1,7 +1,7 @@
 package it.polito.cpo.client
 
-import it.polito.cpo.client.dtos.ReservationRequest
-import it.polito.cpo.client.dtos.ReservationResponse
+import it.polito.cpo.contracts.inventory.ReservationRequest
+import it.polito.cpo.contracts.inventory.ReservationResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Profile
 import org.springframework.http.MediaType

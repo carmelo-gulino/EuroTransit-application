@@ -3,14 +3,17 @@ package it.polito.cpo.service
 import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.client.InventoryClient
 import it.polito.cpo.client.PaymentClient
-import it.polito.cpo.client.dtos.PaymentRequest
-import it.polito.cpo.client.dtos.ReservationRequest
+import it.polito.cpo.contracts.payments.PaymentRequest
+import it.polito.cpo.contracts.payments.PaymentStatus
+import it.polito.cpo.contracts.inventory.ReservationRequest
+import it.polito.cpo.contracts.inventory.ReservationStatus
 import it.polito.cpo.controller.dtos.CheckoutRequest
 import it.polito.cpo.controller.dtos.CheckoutResponse
 import it.polito.cpo.event.KafkaEventPublisher
-import it.polito.cpo.event.dtos.NotificationRequestedEvent
-import it.polito.cpo.event.dtos.OrderConfirmedEvent
-import it.polito.cpo.event.dtos.OrderPlacedEvent
+import it.polito.cpo.contracts.events.NotificationRequestedEvent
+import it.polito.cpo.contracts.events.NotificationRequestedPayload
+import it.polito.cpo.contracts.events.OrderConfirmedEvent
+import it.polito.cpo.contracts.events.OrderPlacedEvent
 import it.polito.cpo.model.Order
 import it.polito.cpo.model.OrderStatus
 import kotlinx.coroutines.*
@@ -105,7 +108,7 @@ class CheckoutOrchestrator(
                 idempotencyKey = "inv-$idempotencyKey"
             )
 
-            if (reservationResponse.status != "HELD") {
+            if (reservationResponse.status != ReservationStatus.HELD) {
                 throw IllegalStateException("Seat reservation rejected: ${reservationResponse.status}")
             }
             reservationId = reservationResponse.reservationId
@@ -124,7 +127,7 @@ class CheckoutOrchestrator(
                 idempotencyKey = "pay-$idempotencyKey"
             )
 
-            if (paymentResponse.status != "AUTHORIZED") {
+            if (paymentResponse.status != PaymentStatus.AUTHORIZED) {
                 throw IllegalStateException("Payment authorization declined: ${paymentResponse.status}")
             }
 
@@ -146,8 +149,10 @@ class CheckoutOrchestrator(
                     correlationId = correlationId,
                     orderId = orderId,
                     principalId = order.userId,
-                    recipientEmail = "customer@example.com",
-                    message = "Your order $orderId has been successfully confirmed!"
+                    payload = NotificationRequestedPayload(
+                        recipientEmail = "customer@example.com",
+                        message = "Your order $orderId has been successfully confirmed!"
+                    )
                 )
             )
 
@@ -176,8 +181,10 @@ class CheckoutOrchestrator(
                     correlationId = correlationId,
                     orderId = orderId,
                     principalId = order.userId,
-                    recipientEmail = "customer@example.com",
-                    message = "Your order $orderId failed. Reason: ${e.message}"
+                    payload = NotificationRequestedPayload(
+                        recipientEmail = "customer@example.com",
+                        message = "Your order $orderId failed. Reason: ${e.message}"
+                    )
                 )
             )
         }
