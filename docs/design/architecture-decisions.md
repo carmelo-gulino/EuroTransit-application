@@ -193,3 +193,29 @@ This gives the team clear service ownership, permission isolation, migration bou
 - **R2DBC `ResourceDatabasePopulator` + `schema.sql`:** no versioning, ordering, or history; cannot apply incremental changes to an existing schema. (This was the initial approach; see `agent-log.md`.)
 - **Flyway/Liquibase in a Kubernetes Job or init container:** keeps the blocking driver out of the app, but adds moving parts (image/ConfigMap delivery of SQL) and makes local and cluster use diverge.
 - **Liquibase instead of Flyway:** native rollback and dialect abstraction, but heavier and unnecessary for a single Postgres dialect with plain SQL.
+
+## ADR-010: Shared Money-Path Contracts Module
+
+**Decision:** Introduce a `money-path-contracts` Gradle library module that holds the wire contracts shared between money-path services — inventory reservation DTOs, payment DTOs, and the Kafka event envelope — instead of duplicating them per service. This reverses the earlier preference for service-local DTOs.
+
+### Selected Option: One shared contracts module
+
+- Pure data types only (no Spring/framework dependencies), so any service can depend on it.
+- orders adopts it now; inventory, payments, and notifications adopt the same types as they touch their code.
+- Statuses are enums (`ReservationStatus`, `PaymentStatus`) rather than free strings.
+
+### Why This Is Better
+
+- Single source of truth for cross-service contracts, so producer and consumer cannot silently drift (the drift that hit the event envelope — see `agent-log.md`).
+- In a monorepo built together, the compile-time coupling cost is low, and the pattern already exists (`security-support`, `observability`).
+- Data-ownership isolation (ADR-008: each service owns its database) is unaffected: this shares the message on the wire, not databases or runtime data.
+
+### Alternatives Considered
+
+- **Service-local DTOs (previous approach):** maximal decoupling, but duplication and drift; weak justification in a monorepo.
+- **Provider-published client library (e.g., `inventory-api`):** cleaner ownership, but one module per provider and consumers wait on provider releases.
+- **OpenAPI/AsyncAPI codegen or consumer-driven contracts (Pact / Spring Cloud Contract):** stronger guarantees, but over-engineered for this project's scope and timeline.
+
+### Ownership
+
+The module is shared: changes go through a PR reviewed by the owner of any affected service, and adding it to `settings.gradle.kts` is a shared-build change announced to the team.

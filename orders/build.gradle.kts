@@ -8,6 +8,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 
+    // Shared wire contracts (reservation/payment DTOs + Kafka event envelope)
+    implementation(project(":money-path-contracts"))
+
     // Schema migrations (Flyway runs at startup, before WebFlux; JDBC driver used only for this).
     // spring-boot-flyway carries FlywayAutoConfiguration (a separate module in Spring Boot 4).
     implementation("org.springframework.boot:spring-boot-flyway")

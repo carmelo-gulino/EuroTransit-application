@@ -1,8 +1,8 @@
 package it.polito.cpo.event
 
-import it.polito.cpo.event.dtos.NotificationRequestedEvent
-import it.polito.cpo.event.dtos.OrderConfirmedEvent
-import it.polito.cpo.event.dtos.OrderPlacedEvent
+import it.polito.cpo.contracts.events.NotificationRequestedEvent
+import it.polito.cpo.contracts.events.OrderConfirmedEvent
+import it.polito.cpo.contracts.events.OrderPlacedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Component
