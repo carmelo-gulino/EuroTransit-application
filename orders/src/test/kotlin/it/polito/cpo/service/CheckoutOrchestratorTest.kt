@@ -78,7 +78,11 @@ class CheckoutOrchestratorTest {
 
     private class StubPaymentClient(private val status: PaymentStatus = PaymentStatus.AUTHORIZED) : PaymentClient {
         override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse =
-            PaymentResponse("pay-1", status, LocalDateTime.now())
+            PaymentResponse(
+                status = status,
+                providerReference = "test-auth-id",
+                errorCode = null
+            )
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -102,7 +106,7 @@ class CheckoutOrchestratorTest {
         val service = FakeOrderService()
 
         val response = orchestratorFor(service).checkout(
-            request = CheckoutRequest(routeId = "R1", seats = listOf("1A", "1B"), totalAmount = BigDecimal("100.00")),
+            request = CheckoutRequest(routeId = "R1", seats = listOf("1A", "1B"), totalAmount = BigDecimal("100.00"), paymentMethodToken = "test-token"),
             idempotencyKey = "key-123",
             userId = "user-1"
         )
@@ -122,7 +126,7 @@ class CheckoutOrchestratorTest {
         service.seeded = IdempotentRequest("key-abc", mapper.writeValueAsString(storedResponse), LocalDateTime.now())
 
         val response = orchestratorFor(service).checkout(
-            request = CheckoutRequest(routeId = "R1", seats = listOf("2A"), totalAmount = BigDecimal("50.00")),
+            request = CheckoutRequest(routeId = "R1", seats = listOf("2A"), totalAmount = BigDecimal("50.00"), paymentMethodToken = "test-token"),
             idempotencyKey = "key-abc",
             userId = "user-1"
         )
