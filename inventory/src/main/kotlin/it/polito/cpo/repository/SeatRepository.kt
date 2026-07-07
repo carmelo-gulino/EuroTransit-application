@@ -14,7 +14,8 @@ interface SeatRepository : CoroutineCrudRepository<Seat, String> {
      * Returns the number of modified rows: if it differs from requested seats, an oversell was prevented!
      */
     @Modifying
-    @Query("UPDATE seats SET status = 'HELD', reservation_id = :reservationId WHERE route_id = :routeId AND seat_id IN (:seatIds) AND status = 'AVAILABLE'")
+    @Query("UPDATE seats SET status = 'HELD', reservation_id = :reservationId " +
+            "WHERE route_id = :routeId AND seat_id IN (:seatIds) AND status = 'AVAILABLE'")
     suspend fun holdSeats(routeId: String, seatIds: List<String>, reservationId: String): Int
 
     /**
