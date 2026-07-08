@@ -35,7 +35,8 @@ class PaymentService(
         amount: BigDecimal,
         currency: String,
         paymentMethodToken: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        correlationId: String?
     ): PaymentResponse {
         
         val fingerprint = "$orderId-$amount-$currency-$paymentMethodToken"
@@ -69,7 +70,7 @@ class PaymentService(
             status = authStatus.name,
             providerReference = result.providerReference,
             idempotencyKey = idempotencyKey
-        )
+        ).apply { setAsNew(true) }
         paymentAuthorizationRepository.save(authorization)
 
         // 4. Save idempotency
@@ -82,12 +83,12 @@ class PaymentService(
             responseCode = if (result.success) 200 else 422,
             responseBody = objectMapper.writeValueAsString(response),
             createdAt = LocalDateTime.now()
-        )
+        ).apply { setAsNew(true) }
         idempotencyRepository.save(idempotencyRecord)
 
         // 5. Emit event
         val eventType = if (result.success) "payment-authorized" else "payment-declined"
-        publishEvent(eventType, orderId, principalId, authorization)
+        publishEvent(eventType, orderId, principalId, authorization, correlationId)
 
         return response
     }
@@ -131,13 +132,13 @@ class PaymentService(
 
         // 4. Save refund record
         val paymentRefund = it.polito.cpo.payments.model.PaymentRefund(
-            authorizationId = authorization.id,
+            authorizationId = authorization.getId(), // We must use getId() since id is private
             amount = amount,
             currency = authorization.currency,
             status = refundStatus.name,
             providerReference = result.refundReference,
             idempotencyKey = idempotencyKey
-        )
+        ).apply { setAsNew(true) }
         paymentRefundRepository.save(paymentRefund)
 
         // 5. Save idempotency
@@ -150,23 +151,85 @@ class PaymentService(
             responseCode = if (result.success) 200 else 422,
             responseBody = objectMapper.writeValueAsString(response),
             createdAt = LocalDateTime.now()
-        )
+        ).apply { setAsNew(true) }
         idempotencyRepository.save(idempotencyRecord)
 
         // 6. Emit event
         val eventType = if (result.success) "payment-refunded" else "payment-refund-failed"
-        publishEvent(eventType, orderId, authorization.principalId, paymentRefund)
+        publishEvent(eventType, orderId, authorization.principalId, paymentRefund, null)
 
         return response
     }
 
-    private fun publishEvent(eventType: String, orderId: String, principalId: String, payload: Any) {
+    @Transactional
+    override suspend fun capture(
+        orderId: String,
+        amount: BigDecimal,
+        idempotencyKey: String,
+        correlationId: String?
+    ): PaymentResponse {
+        
+        val fingerprint = "capture-$orderId-$amount"
+
+        val existingRecord = idempotencyRepository.findById(idempotencyKey)
+        if (existingRecord != null) {
+            if (existingRecord.requestFingerprint != fingerprint) {
+                log.warn("Idempotency conflict for key $idempotencyKey")
+                return PaymentResponse(PaymentStatus.CONFLICT, null, "IDEMPOTENCY_CONFLICT")
+            }
+            return objectMapper.readValue(existingRecord.responseBody, PaymentResponse::class.java)
+        }
+
+        val authorization = paymentAuthorizationRepository.findByOrderId(orderId)
+            ?: return PaymentResponse(PaymentStatus.DECLINED, null, "AUTHORIZATION_NOT_FOUND")
+
+        if (authorization.status != PaymentAuthorization.STATUS_AUTHORIZED || authorization.providerReference == null) {
+            return PaymentResponse(PaymentStatus.DECLINED, null, "INVALID_AUTHORIZATION_STATUS")
+        }
+
+        val result = try {
+            providerAdapter.capture(authorization.providerReference, amount, idempotencyKey)
+        } catch (e: Exception) {
+            log.error("Payment provider failed on capture", e)
+            return PaymentResponse(PaymentStatus.DEPENDENCY_FAILED, null, "PROVIDER_UNAVAILABLE")
+        }
+
+        val captureStatus = if (result.success) PaymentStatus.AUTHORIZED else PaymentStatus.DECLINED
+        val errorCode = result.errorCode
+
+        if (result.success) {
+            // Update auth status
+            // Note: Since we fetch from DB, isNewRecord is false for updates, but we need to ensure it's not overriding.
+            // Spring Data R2DBC will just issue an UPDATE since isNew() returns false by default for this object.
+            // Actually, we made isNewRecord = false by default in the class.
+            paymentAuthorizationRepository.save(authorization.copy(status = "CAPTURED"))
+        }
+
+        val response = PaymentResponse(captureStatus, result.providerReference, errorCode)
+        val idempotencyRecord = IdempotencyRecord(
+            idempotencyKey = idempotencyKey,
+            operation = "capture",
+            principalId = authorization.principalId,
+            requestFingerprint = fingerprint,
+            responseCode = if (result.success) 200 else 422,
+            responseBody = objectMapper.writeValueAsString(response),
+            createdAt = LocalDateTime.now()
+        ).apply { setAsNew(true) }
+        idempotencyRepository.save(idempotencyRecord)
+
+        val eventType = if (result.success) "payment-captured" else "payment-capture-failed"
+        publishEvent(eventType, orderId, authorization.principalId, authorization, correlationId)
+
+        return response
+    }
+
+    private fun publishEvent(eventType: String, orderId: String, principalId: String, payload: Any, explicitCorrelationId: String?) {
         val event = mapOf(
             "eventId" to java.util.UUID.randomUUID().toString(),
             "eventType" to eventType,
             "schemaVersion" to 1,
             "occurredAt" to LocalDateTime.now().toString(),
-            "correlationId" to org.slf4j.MDC.get("correlationId"),
+            "correlationId" to (explicitCorrelationId ?: org.slf4j.MDC.get("correlationId")),
             "orderId" to orderId,
             "principalId" to principalId,
             "payload" to payload

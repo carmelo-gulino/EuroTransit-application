@@ -15,7 +15,8 @@ interface IPaymentService {
         amount: BigDecimal,
         currency: String,
         paymentMethodToken: String,
-        idempotencyKey: String
+        idempotencyKey: String,
+        correlationId: String?
     ): PaymentResponse
 
     suspend fun refund(
@@ -23,4 +24,11 @@ interface IPaymentService {
         amount: BigDecimal?,
         idempotencyKey: String
     ): PaymentRefundResponse
+
+    suspend fun capture(
+        orderId: String,
+        amount: BigDecimal,
+        idempotencyKey: String,
+        correlationId: String?
+    ): PaymentResponse
 }
