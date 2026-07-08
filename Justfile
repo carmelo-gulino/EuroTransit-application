@@ -10,10 +10,7 @@ ci-local:
     act pull_request -j build
 
 smoke-kind:
-    ./scripts/smoke-kind.sh
-
-smoke-kind-keep:
-    KEEP_KIND_CLUSTER=true ./scripts/smoke-kind.sh
+    act workflow_dispatch -j kind-smoke --container-options "-v /var/run/docker.sock:/var/run/docker.sock"
 
 pr-check: ci-local
 
