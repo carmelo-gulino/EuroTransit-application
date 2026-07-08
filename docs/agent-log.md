@@ -77,3 +77,13 @@ This log is intentionally required by the assignment. It records concrete cases 
 - **Why it was wrong:** A single idempotent `schema.sql` cannot handle ordered, incremental schema evolutions (e.g., `V1`, `V2`) needed for long-term production maintenance.
 - **How the team caught it:** The developer realized that maintaining 10+ sequential migrations with a single file technique was unscalable.
 - **Correction:** Dropped the custom R2DBC initializer and integrated embedded Flyway with the PostgreSQL JDBC driver. Externalized DB credentials via environment variables so both Flyway and R2DBC can connect seamlessly.
+
+## Case 10: Superficial Code Review on Transactional Outbox and Idempotency
+
+- **Date:** 2026-07-08
+- **Owner:** Person 3 (Inventory)
+- **Prompt/task:** Review the `feature/inventory-reservation-logic` branch to verify the implementation of core business logic, Transactional Outbox, and idempotency.
+- **Agent output:** An extremely positive code review approving the PR "with flying colors", praising the Kafka integration as a solid Transactional Outbox and the idempotency logic as "extreme".
+- **Why it was wrong:** The review was technically superficial and missed critical distributed systems flaws. The Kafka publisher executed a `CompletableFuture` fire-and-forget after the DB commit, risking silent event loss (dual-write failure, NOT an Outbox pattern). Furthermore, the idempotency check used a naive check-then-act approach susceptible to TOCTOU race conditions, returning HTTP 500 on concurrent requests instead of returning cached responses. Finally, business failures (no seats) incorrectly returned HTTP 201.
+- **How the team detected it:** A secondary, deeper independent review exposed the severe flaws and the architectural misunderstanding of the initial review.
+- **Correction:** The agent recognized the mistake, abandoned the superficial approach, and planned fixes to implement a proper Outbox/event failure handling, an insert-first idempotency strategy, and correct HTTP semantics.
