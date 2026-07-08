@@ -1,4 +1,4 @@
-name: CI Fast
+name: Smoke Tests
 
 on:
   workflow_dispatch:
@@ -16,13 +16,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-fast
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  kind-smoke-fast:
-    name: kind Smoke Fast
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-kind-smoke-test')
+  kind-smoke:
+    name: kind Smoke
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-kind-smoke')
     runs-on: ubuntu-latest
 
     steps:
