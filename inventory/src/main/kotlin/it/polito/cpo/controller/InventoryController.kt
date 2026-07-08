@@ -9,22 +9,24 @@ import org.springframework.web.bind.annotation.*
 import java.time.LocalDateTime
 import java.util.UUID
 
+import it.polito.cpo.service.ReservationService
+
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
+
 @RestController
 @RequestMapping("/api/inventory/reservations")
-class InventoryController {
+class InventoryController(
+    private val reservationService: ReservationService
+) {
 
     @PostMapping
     suspend fun createReservation(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
+        @AuthenticationPrincipal jwt: Jwt,
         @RequestBody request: ReservationRequest
     ): ResponseEntity<ReservationResponse> {
-        // Stub implementation: always returns a successful hold
-        // Federico's Orders service will use this to test its pipeline.
-        val response = ReservationResponse(
-            reservationId = UUID.randomUUID().toString(),
-            status = ReservationStatus.HELD,
-            expiresAt = LocalDateTime.now().plusMinutes(10)
-        )
+        val response = reservationService.reserveSeats(idempotencyKey, jwt.subject, request)
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
     }
 

@@ -11,7 +11,7 @@ interface SeatRepository : CoroutineCrudRepository<Seat, String> {
 
     /**
      * Attempts to atomically update seats to HELD only if they are all AVAILABLE.
-     * Returns the number of modified rows: if it differs from requested seats, an oversell was prevented!
+     * Returns the number of modified rows: if it differs from requested seats, an oversale was prevented.
      */
     @Modifying
     @Query("UPDATE seats SET status = 'HELD', reservation_id = :reservationId " +
@@ -19,7 +19,7 @@ interface SeatRepository : CoroutineCrudRepository<Seat, String> {
     suspend fun holdSeats(routeId: String, seatIds: List<String>, reservationId: String): Int
 
     /**
-     * Releases seats when a hold expires or is cancelled.
+     * Releases seats when a hold expires or is canceled.
      */
     @Modifying
     @Query("UPDATE seats SET status = 'AVAILABLE', reservation_id = NULL WHERE reservation_id = :reservationId")
