@@ -26,7 +26,7 @@ class ReservationService(
 ) {
 
     /**
-     * Generates a SHA-256 fingerprint of the request payload to detect idempotency collisions.
+     * Generates an SHA-256 fingerprint of the request payload to detect idempotency collisions.
      */
     private fun generateFingerprint(request: ReservationRequest): String {
         val json = objectMapper.writeValueAsString(request)
@@ -94,5 +94,24 @@ class ReservationService(
         idempotencyRecordRepository.save(idempotencyRecord)
 
         return response
+    }
+
+    /**
+     * Releases a reservation and frees up the associated seats.
+     * This operation is naturally idempotent.
+     */
+    @Transactional
+    suspend fun releaseReservation(reservationId: String) {
+        val reservation = reservationRepository.findById(reservationId)
+        
+        if (reservation != null && reservation.status == ReservationStatus.HELD.name) {
+            seatRepository.releaseSeats(reservationId)
+            
+            val updatedReservation = reservation.copy(
+                status = "CANCELLED",
+                isNewRecord = false
+            )
+            reservationRepository.save(updatedReservation)
+        }
     }
 }

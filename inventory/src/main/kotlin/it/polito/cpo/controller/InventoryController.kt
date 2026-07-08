@@ -34,7 +34,7 @@ class InventoryController(
     suspend fun releaseReservation(
         @PathVariable reservationId: String
     ): ResponseEntity<Void> {
-        // Stub implementation: acknowledges the release
+        reservationService.releaseReservation(reservationId)
         return ResponseEntity.noContent().build()
     }
 }
