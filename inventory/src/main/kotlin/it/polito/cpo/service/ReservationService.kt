@@ -1,6 +1,6 @@
 package it.polito.cpo.service
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.contracts.events.InventoryFailedEvent
 import it.polito.cpo.contracts.events.InventoryFailedPayload
 import it.polito.cpo.contracts.events.InventoryReservedEvent
@@ -158,7 +158,7 @@ class ReservationService(
      */
     @Transactional
     suspend fun releaseReservation(reservationId: String) {
-        val reservation = reservationRepository.findById(reservationId)
+        val reservation = reservationRepository.findByReservationId(reservationId)
         
         if (reservation != null && reservation.status == ReservationStatus.HELD.name) {
             logger.info("Releasing reservation: {} for order: {}", reservationId, reservation.orderId)
