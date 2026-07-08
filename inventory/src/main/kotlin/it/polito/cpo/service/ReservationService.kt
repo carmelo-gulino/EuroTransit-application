@@ -22,6 +22,8 @@ import java.time.OffsetDateTime
 import java.util.UUID
 import it.polito.cpo.event.KafkaEventPublisher
 
+import org.springframework.transaction.reactive.TransactionalOperator
+import org.springframework.transaction.reactive.executeAndAwait
 import org.slf4j.LoggerFactory
 
 @Service
@@ -30,7 +32,8 @@ class ReservationService(
     private val reservationRepository: ReservationRepository,
     private val idempotencyRecordRepository: IdempotencyRecordRepository,
     private val objectMapper: ObjectMapper,
-    private val eventPublisher: KafkaEventPublisher
+    private val eventPublisher: KafkaEventPublisher,
+    private val transactionalOperator: TransactionalOperator
 ) {
     private val logger = LoggerFactory.getLogger(ReservationService::class.java)
 
@@ -45,8 +48,8 @@ class ReservationService(
 
     /**
      * Reserves seats and handles idempotency to prevent oversell or double-processing.
+     * DB writes are executed in a programmatic transaction, while Kafka events are emitted AFTER commit.
      */
-    @Transactional
     suspend fun reserveSeats(
         idempotencyKey: String,
         principalId: String,
@@ -74,40 +77,52 @@ class ReservationService(
         }
 
         val reservationId = UUID.randomUUID().toString()
-        val rowsUpdated = seatRepository.holdSeats(request.routeId, request.seats, reservationId)
-        val isSuccess = rowsUpdated == request.seats.size
-        
-        val status = if (isSuccess) ReservationStatus.HELD else ReservationStatus.FAILED
         val expiresAt = OffsetDateTime.now().plusMinutes(10)
 
-        if (isSuccess) {
-            val reservation = Reservation(
+        // 1. Transactional boundary for DB state
+        val isSuccess = transactionalOperator.executeAndAwait {
+            val rowsUpdated = seatRepository.holdSeats(request.routeId, request.seats, reservationId)
+            val success = rowsUpdated == request.seats.size
+            val status = if (success) ReservationStatus.HELD else ReservationStatus.FAILED
+
+            if (success) {
+                val reservation = Reservation(
+                    reservationId = reservationId,
+                    orderId = request.orderId,
+                    routeId = request.routeId,
+                    status = status.name,
+                    expiresAt = expiresAt
+                )
+                reservationRepository.save(reservation)
+            }
+
+            val storedResponse = ReservationResponse(
                 reservationId = reservationId,
-                orderId = request.orderId,
-                routeId = request.routeId,
-                status = status.name,
-                expiresAt = expiresAt
+                status = status,
+                expiresAt = expiresAt.toLocalDateTime()
             )
-            reservationRepository.save(reservation)
+
+            val idempotencyRecord = IdempotencyRecord(
+                idempotencyKey = idempotencyKey,
+                principalId = principalId,
+                operation = "RESERVE",
+                requestFingerprint = fingerprint,
+                responseStatusCode = 201,
+                responseBody = objectMapper.writeValueAsString(storedResponse)
+            )
+            idempotencyRecordRepository.save(idempotencyRecord)
+
+            success
         }
 
+        val finalStatus = if (isSuccess) ReservationStatus.HELD else ReservationStatus.FAILED
         val response = ReservationResponse(
             reservationId = reservationId,
-            status = status,
+            status = finalStatus,
             expiresAt = expiresAt.toLocalDateTime()
         )
 
-        val idempotencyRecord = IdempotencyRecord(
-            idempotencyKey = idempotencyKey,
-            principalId = principalId,
-            operation = "RESERVE",
-            requestFingerprint = fingerprint,
-            responseStatusCode = 201,
-            responseBody = objectMapper.writeValueAsString(response)
-        )
-        idempotencyRecordRepository.save(idempotencyRecord)
-
-        // Publish Kafka event based on outcome
+        // 2. Publish Kafka event based on outcome AFTER commit
         if (isSuccess) {
             logger.info("Successfully reserved seats for order: {} by principal: {}", request.orderId, principalId)
             val event = InventoryReservedEvent(
