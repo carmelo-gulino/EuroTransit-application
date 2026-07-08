@@ -219,3 +219,26 @@ This gives the team clear service ownership, permission isolation, migration bou
 ### Ownership
 
 The module is shared: changes go through a PR reviewed by the owner of any affected service, and adding it to `settings.gradle.kts` is a shared-build change announced to the team.
+
+## ADR-011: Durable Checkout Pipeline via `order-placed` Consumer
+
+**Decision:** Orders runs the checkout pipeline (reserve → pay → confirm/compensate) from a Kafka consumer of its own `order-placed` event, not from an in-process detached coroutine scope. The synchronous entry (`POST /api/orders`) persists the order as `ACCEPTED`, records the caller idempotency record, and publishes `order-placed`; the consumer then drives the pipeline. This refines ADR-007: the pipeline's failure domain and shutdown story move from "an explicit coroutine scope that drains on SIGTERM" to "at-least-once Kafka delivery with committed offsets".
+
+### Why This Is Better
+
+- **Durable/recoverable:** the previous detached `CoroutineScope(SupervisorJob + Dispatchers.Default)` lost in-flight orders on a hard crash (stuck forever in `RESERVING`/`PAYMENT_PENDING`). With Kafka, the offset is committed only after processing, so a crash is recovered by redelivery — satisfying the DoD "no duplicate processing after restart" and "in-flight work drains or cancels cooperatively" via the listener container's graceful stop.
+- **No throwaway migration:** `order-placed` was already published; this adds the consumer side. It keeps the design's synchronous consistency boundary (ADR-001/ADR-002) — reserve and pay remain synchronous HTTP calls *inside* the consumer — while making the orchestration durable.
+- **Idempotent under at-least-once:** processing is guarded by order state (terminal orders `CONFIRMED`/`FAILED`/`CANCELLED` are skipped) and downstream idempotency keys are derived from the immutable order id (`inv-<orderId>`, `pay-<orderId>`, `rel-<orderId>`), so a redelivery re-drives a non-terminal order to the same outcome.
+- **Correlation preserved:** the consumer seeds the event's `correlationId` into the Reactor context and MDC, so the pipeline's outbound calls carry `X-Correlation-Id` and logs stay grep-able end-to-end.
+
+### Consequences
+
+- Orders is now both producer and consumer of `order-placed` (a "pipeline observer" per `api-design.md`); consumer group `orders`.
+- The payment method token (a sandbox reference, not card data) is persisted on the order so the async pipeline can rebuild the payment request, and is cleared once the order reaches a terminal state. It is **not** placed on any Kafka event.
+- Synchronous calls to Inventory and Payments are wrapped with Resilience4j (timeout, bounded retry with backoff/jitter on transient faults only, circuit breaker, bulkhead) — see `ResilienceConfiguration`. A payment decline is a normal HTTP 200 result, so it never trips the breaker.
+- Follow-up: publish `order-placed` via a transactional outbox (to close the DB-commit-then-publish gap), and add a dead-letter topic for poison messages. Neither is required for the current slice and both are documented, not silent.
+
+### Alternatives Considered
+
+- **In-memory coroutine pipeline + cooperative drain (`@PreDestroy`) (previous direction):** simplest, but only survives *graceful* shutdown; a crash still loses in-flight work.
+- **Full event choreography (a topic + cross-service consumer per stage):** maximal decoupling, but contradicts the synchronous consistency boundary for reserve/pay and is over-engineered for this scope.

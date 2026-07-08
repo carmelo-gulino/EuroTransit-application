@@ -19,6 +19,7 @@ import it.polito.cpo.model.Order
 import it.polito.cpo.model.OrderStatus
 import it.polito.cpo.repository.IdempotentRequestRepository
 import it.polito.cpo.repository.OrderRepository
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
@@ -52,13 +53,17 @@ class CheckoutOrchestratorTest {
         /** Statuses persisted, in order. Thread-safe: the async pipeline appends from another thread. */
         val savedOrderStatuses = CopyOnWriteArrayList<OrderStatus>()
         val idempotencyStore = HashMap<String, IdempotentRequest>()
+        val ordersById = HashMap<UUID, Order>()
         var seeded: IdempotentRequest? = null
 
         override suspend fun findIdempotentRequest(key: String): IdempotentRequest? =
             seeded ?: idempotencyStore[key]
 
+        override suspend fun getOrderById(id: UUID): Order? = ordersById[id]
+
         override suspend fun saveOrder(order: Order): Order {
             savedOrderStatuses.add(order.status)
+            ordersById[order.getId()] = order
             return order
         }
 
@@ -98,7 +103,8 @@ class CheckoutOrchestratorTest {
         inventoryClient = StubInventoryClient(),
         paymentClient = StubPaymentClient(),
         kafkaEventPublisher = NoopEventPublisher(),
-        objectMapper = mapper
+        objectMapper = mapper,
+        meterRegistry = SimpleMeterRegistry()
     )
 
     @Test
@@ -134,6 +140,51 @@ class CheckoutOrchestratorTest {
         assertEquals(storedOrderId, response.orderId)
         assertEquals(OrderStatus.ACCEPTED, response.status)
         // Replaying an existing request must NOT create or persist a new order.
+        assertTrue(service.savedOrderStatuses.isEmpty())
+    }
+
+    @Test
+    fun `processOrderPlaced drives an accepted order to CONFIRMED`() = runTest {
+        val service = FakeOrderService()
+        val orderId = UUID.randomUUID()
+        service.ordersById[orderId] = Order(
+            id = orderId,
+            userId = "user-1",
+            status = OrderStatus.ACCEPTED,
+            routeId = "R1",
+            seats = "1A,1B",
+            totalAmount = BigDecimal("100.00"),
+            createdAt = LocalDateTime.now(),
+            paymentMethodToken = "test-token"
+        ).apply { setAsNew(false) }
+
+        orchestratorFor(service).processOrderPlaced(
+            OrderPlacedEvent(correlationId = "corr-1", orderId = orderId, principalId = "user-1")
+        )
+
+        // The pipeline walks RESERVING -> PAYMENT_PENDING -> CONFIRMED.
+        assertEquals(OrderStatus.CONFIRMED, service.savedOrderStatuses.last())
+    }
+
+    @Test
+    fun `processOrderPlaced skips an order already in a terminal state`() = runTest {
+        val service = FakeOrderService()
+        val orderId = UUID.randomUUID()
+        service.ordersById[orderId] = Order(
+            id = orderId,
+            userId = "user-1",
+            status = OrderStatus.CONFIRMED,
+            routeId = "R1",
+            seats = "1A",
+            totalAmount = BigDecimal("50.00"),
+            createdAt = LocalDateTime.now()
+        ).apply { setAsNew(false) }
+
+        orchestratorFor(service).processOrderPlaced(
+            OrderPlacedEvent(correlationId = "corr-1", orderId = orderId, principalId = "user-1")
+        )
+
+        // A redelivered event for a terminal order must not re-run the pipeline.
         assertTrue(service.savedOrderStatuses.isEmpty())
     }
 }
