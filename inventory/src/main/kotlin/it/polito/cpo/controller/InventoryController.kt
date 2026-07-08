@@ -23,10 +23,11 @@ class InventoryController(
     @PostMapping
     suspend fun createReservation(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
+        @RequestHeader("X-Correlation-Id") correlationId: String,
         @AuthenticationPrincipal jwt: Jwt,
         @RequestBody request: ReservationRequest
     ): ResponseEntity<ReservationResponse> {
-        val response = reservationService.reserveSeats(idempotencyKey, jwt.subject, request)
+        val response = reservationService.reserveSeats(idempotencyKey, jwt.subject, correlationId, request)
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
     }
 

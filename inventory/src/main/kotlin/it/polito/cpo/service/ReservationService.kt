@@ -1,6 +1,10 @@
 package it.polito.cpo.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import it.polito.cpo.contracts.events.InventoryFailedEvent
+import it.polito.cpo.contracts.events.InventoryFailedPayload
+import it.polito.cpo.contracts.events.InventoryReservedEvent
+import it.polito.cpo.contracts.events.InventoryReservedPayload
 import it.polito.cpo.contracts.inventory.ReservationRequest
 import it.polito.cpo.contracts.inventory.ReservationResponse
 import it.polito.cpo.contracts.inventory.ReservationStatus
@@ -16,13 +20,15 @@ import org.springframework.transaction.annotation.Transactional
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.util.UUID
+import it.polito.cpo.event.KafkaEventPublisher
 
 @Service
 class ReservationService(
     private val seatRepository: SeatRepository,
     private val reservationRepository: ReservationRepository,
     private val idempotencyRecordRepository: IdempotencyRecordRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val eventPublisher: KafkaEventPublisher
 ) {
 
     /**
@@ -41,6 +47,7 @@ class ReservationService(
     suspend fun reserveSeats(
         idempotencyKey: String,
         principalId: String,
+        correlationId: String,
         request: ReservationRequest
     ): ReservationResponse {
         val fingerprint = generateFingerprint(request)
@@ -55,7 +62,10 @@ class ReservationService(
                 )
             }
             if (existingRecord.responseBody != null) {
-                return objectMapper.readValue(existingRecord.responseBody, ReservationResponse::class.java)
+                return objectMapper.readValue(
+                    existingRecord.responseBody,
+                    ReservationResponse::class.java
+                )
             }
         }
 
@@ -92,6 +102,31 @@ class ReservationService(
             responseBody = objectMapper.writeValueAsString(response)
         )
         idempotencyRecordRepository.save(idempotencyRecord)
+
+        // Publish Kafka event based on outcome
+        if (isSuccess) {
+            val event = InventoryReservedEvent(
+                correlationId = correlationId,
+                orderId = request.orderId,
+                principalId = principalId,
+                payload = InventoryReservedPayload(
+                    reservationId = reservationId,
+                    routeId = request.routeId,
+                    expiresAt = expiresAt.toLocalDateTime()
+                )
+            )
+            eventPublisher.publishInventoryReserved(event)
+        } else {
+            val event = InventoryFailedEvent(
+                correlationId = correlationId,
+                orderId = request.orderId,
+                principalId = principalId,
+                payload = InventoryFailedPayload(
+                    reason = "Seats unavailable or already held"
+                )
+            )
+            eventPublisher.publishInventoryFailed(event)
+        }
 
         return response
     }
