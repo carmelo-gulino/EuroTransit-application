@@ -1,27 +1,29 @@
 package it.polito.cpo
 
+import it.polito.cpo.security.SecurityConfig
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.Import
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder
 import org.springframework.test.web.reactive.server.WebTestClient
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
 import reactor.core.publisher.Mono
 import java.time.Instant
 
-@SpringBootTest(
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = ["management.endpoint.health.probes.enabled=true"],
-)
-@AutoConfigureWebTestClient
-@Import(PaymentsSecurityTestConfiguration::class)
+/**
+ * Sliced security test. Loads ONLY the real [SecurityConfig] filter chain plus a stub controller,
+ * not the full application. Keeps the test independent of the database (Flyway/R2DBC), Kafka and the
+ * Stripe provider, so it stays green in CI without external dependencies. Mirrors the orders slice.
+ */
+@WebFluxTest(controllers = [PaymentsSecurityProbeController::class])
+@Import(SecurityConfig::class, PaymentsSecurityTestConfiguration::class)
 class PaymentsSecurityConfigTests @Autowired constructor(
     private val webTestClient: WebTestClient,
 ) {
@@ -76,6 +78,11 @@ class PaymentsSecurityTestConfiguration {
 class PaymentsSecurityProbeController {
     @PostMapping("/api/payments/authorize")
     fun authorize(): Map<String, String> = mapOf("status" to "authorized")
+
+    // Stands in for the actuator health endpoint, which is not booted in this web slice.
+    // Lets us verify the SecurityConfig rule that /actuator/health/** is permitAll.
+    @GetMapping("/actuator/health/liveness")
+    fun liveness(): Map<String, String> = mapOf("status" to "UP")
 }
 
 private fun testJwt(token: String): Jwt {
