@@ -34,18 +34,20 @@ class NotificationRequestedEventListenerTests {
         return KafkaTemplate(DefaultKafkaProducerFactory(props))
     }
 
-    /** Mirrors the ACTUAL wire shape Orders emits (flat fields, ISO-8601 occurredAt). */
+    /** Mirrors the shared money-path-contracts envelope: schemaVersion + nested payload. */
     private fun eventJson(eventId: UUID, principal: String, order: UUID) = """
         {
           "eventId": "$eventId",
           "eventType": "notification-requested",
+          "schemaVersion": 1,
           "occurredAt": "2026-07-06T19:14:43",
           "correlationId": "corr-$eventId",
           "orderId": "$order",
           "principalId": "$principal",
-          "payloadVersion": 1,
-          "recipientEmail": "$principal@eurotransit.local",
-          "message": "Your order is confirmed"
+          "payload": {
+            "recipientEmail": "$principal@eurotransit.local",
+            "message": "Your order is confirmed"
+          }
         }
     """.trimIndent()
 

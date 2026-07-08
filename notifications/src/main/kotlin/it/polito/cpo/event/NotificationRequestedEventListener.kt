@@ -1,7 +1,7 @@
 package it.polito.cpo.event
 
 import io.micrometer.core.instrument.MeterRegistry
-import it.polito.cpo.event.dtos.NotificationRequestedEvent
+import it.polito.cpo.contracts.events.NotificationRequestedEvent
 import it.polito.cpo.notification.NotificationView
 import it.polito.cpo.notification.NotificationStore
 import it.polito.cpo.observability.CorrelationId
@@ -16,8 +16,9 @@ import java.util.UUID
 /**
  * Consumes `notification-requested` events and records them into the read model.
  *
- * - Parses the raw String payload manually (Orders' producer stamps a `__TypeId__`
- *   header with its own FQCN; a typed deserializer would fail to load that class here).
+ * - Parses the raw String payload manually into the shared contract DTO
+ *   (`money-path-contracts`). Orders' producer stamps a `__TypeId__` header; parsing a
+ *   plain String keeps the consumer decoupled from that header regardless of the FQCN.
  * - Wraps processing in the event's own correlation id via MDC, reusing the exact key
  *   the `:observability` module bridges into ECS JSON logs, so a consumed event's log
  *   line is grep-able by the same correlation id as the originating checkout request.
@@ -59,8 +60,8 @@ class NotificationRequestedEventListener(
                     id = event.eventId,
                     principalId = event.principalId,
                     orderId = event.orderId,
-                    message = event.message,
-                    recipientEmail = event.recipientEmail,
+                    message = event.payload.message,
+                    recipientEmail = event.payload.recipientEmail,
                     occurredAt = event.occurredAt,
                     receivedAt = LocalDateTime.now(),
                 ),
