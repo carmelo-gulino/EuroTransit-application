@@ -18,6 +18,7 @@ class PaymentController(
     @PostMapping("/authorize")
     suspend fun authorizePayment(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
+        @RequestHeader("X-Correlation-Id", required = false) correlationId: String?,
         @RequestHeader("Authorization", required = false) authorizationHeader: String?,
         @RequestBody request: PaymentRequest
     ): ResponseEntity<PaymentResponse> {
@@ -28,7 +29,8 @@ class PaymentController(
             amount = request.amount,
             currency = request.currency,
             paymentMethodToken = request.paymentMethodToken,
-            idempotencyKey = idempotencyKey
+            idempotencyKey = idempotencyKey,
+            correlationId = correlationId
         )
 
         val httpStatus = when (response.status) {
@@ -60,5 +62,29 @@ class PaymentController(
             IPaymentService.RefundStatus.NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(result)
             IPaymentService.RefundStatus.DEPENDENCY_FAILED -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(result)
         }
+    }
+
+    @PostMapping("/capture")
+    suspend fun capturePayment(
+        @RequestHeader("Idempotency-Key") idempotencyKey: String,
+        @RequestHeader("X-Correlation-Id", required = false) correlationId: String?,
+        @RequestHeader("Authorization", required = false) authorizationHeader: String?,
+        @RequestBody request: it.polito.cpo.contracts.payments.PaymentCaptureRequest
+    ): ResponseEntity<PaymentResponse> {
+        
+        val response = paymentService.capture(
+            orderId = request.orderId.toString(),
+            amount = request.amount,
+            idempotencyKey = idempotencyKey,
+            correlationId = correlationId
+        )
+
+        val httpStatus = when (response.status) {
+            PaymentStatus.AUTHORIZED -> HttpStatus.OK
+            PaymentStatus.DECLINED -> HttpStatus.UNPROCESSABLE_ENTITY
+            PaymentStatus.CONFLICT -> HttpStatus.CONFLICT
+            PaymentStatus.DEPENDENCY_FAILED -> HttpStatus.SERVICE_UNAVAILABLE
+        }
+        return ResponseEntity.status(httpStatus).body(response)
     }
 }
