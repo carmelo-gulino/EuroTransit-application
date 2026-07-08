@@ -38,7 +38,7 @@ class PaymentsSecurityConfigTests @Autowired constructor(
     @Test
     fun `payment APIs reject anonymous requests`() {
         webTestClient.post()
-            .uri("/api/payments/authorize")
+            .uri("/api/payments/probe")
             .exchange()
             .expectStatus().isUnauthorized
     }
@@ -46,7 +46,7 @@ class PaymentsSecurityConfigTests @Autowired constructor(
     @Test
     fun `payment APIs require service role`() {
         webTestClient.post()
-            .uri("/api/payments/authorize")
+            .uri("/api/payments/probe")
             .headers { it.setBearerAuth("service-token") }
             .exchange()
             .expectStatus().isOk
@@ -55,7 +55,7 @@ class PaymentsSecurityConfigTests @Autowired constructor(
     @Test
     fun `payment APIs reject customer tokens`() {
         webTestClient.post()
-            .uri("/api/payments/authorize")
+            .uri("/api/payments/probe")
             .headers { it.setBearerAuth("customer-token") }
             .exchange()
             .expectStatus().isForbidden
@@ -76,7 +76,7 @@ class PaymentsSecurityTestConfiguration {
 
 @RestController
 class PaymentsSecurityProbeController {
-    @PostMapping("/api/payments/authorize")
+    @PostMapping("/api/payments/probe")
     fun authorize(): Map<String, String> = mapOf("status" to "authorized")
 
     // Stands in for the actuator health endpoint, which is not booted in this web slice.
