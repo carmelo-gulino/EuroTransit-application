@@ -11,10 +11,18 @@ import java.util.UUID
 @Component
 @Profile("dev")
 class MockPaymentClient : PaymentClient {
-    override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse {
+    override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
         return PaymentResponse(
             status = it.polito.cpo.contracts.payments.PaymentStatus.AUTHORIZED,
             providerReference = "mock_auth_id",
+            errorCode = null
+        )
+    }
+
+    override suspend fun capturePayment(request: it.polito.cpo.contracts.payments.PaymentCaptureRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
+        return PaymentResponse(
+            status = it.polito.cpo.contracts.payments.PaymentStatus.AUTHORIZED,
+            providerReference = "mock_cap_id",
             errorCode = null
         )
     }

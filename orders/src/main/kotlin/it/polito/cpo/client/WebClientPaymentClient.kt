@@ -17,11 +17,23 @@ class WebClientPaymentClient(
 
     private val webClient = WebClient.builder().baseUrl(paymentsUrl).build()
 
-    override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse {
+    override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
         return webClient.post()
             .uri("/api/payments/authorize")
             .contentType(MediaType.APPLICATION_JSON)
             .header("Idempotency-Key", idempotencyKey)
+            .header("X-Correlation-Id", correlationId)
+            .bodyValue(request)
+            .retrieve()
+            .awaitBody()
+    }
+
+    override suspend fun capturePayment(request: it.polito.cpo.contracts.payments.PaymentCaptureRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
+        return webClient.post()
+            .uri("/api/payments/capture")
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("Idempotency-Key", idempotencyKey)
+            .header("X-Correlation-Id", correlationId)
             .bodyValue(request)
             .retrieve()
             .awaitBody()
