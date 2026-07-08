@@ -77,10 +77,16 @@ class CheckoutOrchestratorTest {
     }
 
     private class StubPaymentClient(private val status: PaymentStatus = PaymentStatus.AUTHORIZED) : PaymentClient {
-        override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse =
+        override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String, correlationId: String): PaymentResponse =
             PaymentResponse(
                 status = status,
                 providerReference = "test-auth-id",
+                errorCode = null
+            )
+        override suspend fun capturePayment(request: it.polito.cpo.contracts.payments.PaymentCaptureRequest, idempotencyKey: String, correlationId: String): PaymentResponse =
+            PaymentResponse(
+                status = status,
+                providerReference = "test-cap-id",
                 errorCode = null
             )
     }

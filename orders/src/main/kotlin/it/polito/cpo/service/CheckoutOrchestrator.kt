@@ -3,6 +3,7 @@ package it.polito.cpo.service
 import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.client.InventoryClient
 import it.polito.cpo.client.PaymentClient
+import it.polito.cpo.contracts.payments.PaymentCaptureRequest
 import it.polito.cpo.contracts.payments.PaymentRequest
 import it.polito.cpo.contracts.payments.PaymentStatus
 import it.polito.cpo.contracts.inventory.ReservationRequest
@@ -126,7 +127,8 @@ class CheckoutOrchestrator(
                     currency = "EUR",
                     paymentMethodToken = request.paymentMethodToken
                 ),
-                idempotencyKey = "pay-$idempotencyKey"
+                idempotencyKey = "pay-$idempotencyKey",
+                correlationId = correlationId
             )
 
             if (paymentResponse.status != it.polito.cpo.contracts.payments.PaymentStatus.AUTHORIZED) {
@@ -137,7 +139,24 @@ class CheckoutOrchestrator(
             order.status = OrderStatus.CONFIRMED
             orderService.saveOrder(order)
 
-            // Step 6: Publish confirmed & notification requested events
+            // Step 6: Capture the payment now that order is confirmed
+            try {
+                val captureResponse = paymentClient.capturePayment(
+                    request = PaymentCaptureRequest(
+                        orderId = orderId,
+                        amount = order.totalAmount
+                    ),
+                    idempotencyKey = "cap-$idempotencyKey",
+                    correlationId = correlationId
+                )
+                if (captureResponse.status != PaymentStatus.AUTHORIZED) {
+                    logger.error("Payment capture failed for order {}", orderId)
+                }
+            } catch (e: Exception) {
+                logger.error("Error capturing payment for order {}", orderId, e)
+            }
+
+            // Step 7: Publish confirmed & notification requested events
             kafkaEventPublisher.publishOrderConfirmed(
                 OrderConfirmedEvent(
                     correlationId = correlationId,
