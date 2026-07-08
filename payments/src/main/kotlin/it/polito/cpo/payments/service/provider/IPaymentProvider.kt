@@ -14,6 +14,12 @@ interface IPaymentProvider {
         amount: BigDecimal?, // null means full refund
         idempotencyKey: String
     ): ProviderRefundResult
+
+    suspend fun capture(
+        providerReference: String,
+        amount: BigDecimal?,
+        idempotencyKey: String
+    ): ProviderAuthorizationResult
 }
 
 data class ProviderAuthorizationResult(

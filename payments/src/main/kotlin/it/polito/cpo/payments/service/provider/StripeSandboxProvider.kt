@@ -11,6 +11,9 @@ import org.springframework.web.reactive.function.BodyInserters
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import org.springframework.web.reactive.function.client.awaitBody
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
+import reactor.netty.http.client.HttpClient
+import java.time.Duration
 import java.math.BigDecimal
 
 @Component
@@ -21,8 +24,13 @@ class StripeSandboxProvider(
 
     private val log = LoggerFactory.getLogger(javaClass)
     
-    // Costruiamo il client HTTP agganciandogli la chiave segreta (Bearer token)
+    // Configuro il timeout a livello di connessione HTTP (10 secondi)
+    private val httpClient = HttpClient.create()
+        .responseTimeout(Duration.ofSeconds(10))
+
+    // Costruiamo il client HTTP agganciandogli la chiave segreta e il timeout
     private val webClient = WebClient.builder()
+        .clientConnector(ReactorClientHttpConnector(httpClient))
         .baseUrl(sandboxUrl)
         .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer $secretKey")
         .build()
@@ -40,6 +48,7 @@ class StripeSandboxProvider(
         formData.add("amount", amount.multiply(BigDecimal(100)).toLong().toString())
         formData.add("currency", currency.lowercase())
         formData.add("source", paymentMethodToken)
+        formData.add("capture", "false") // HOLD instead of capture
 
         return try {
             val response = webClient.post()
@@ -73,6 +82,46 @@ class StripeSandboxProvider(
             throw e
         }
     }
+    
+    override suspend fun capture(
+        providerReference: String,
+        amount: BigDecimal?,
+        idempotencyKey: String
+    ): ProviderAuthorizationResult {
+        log.info("Sending capture request to Stripe Sandbox for charge $providerReference")
+        
+        val formData = LinkedMultiValueMap<String, String>()
+        if (amount != null) {
+            formData.add("amount", amount.multiply(BigDecimal(100)).toLong().toString())
+        }
+
+        return try {
+            val response = webClient.post()
+                .uri("/charges/$providerReference/capture")
+                .header("Idempotency-Key", "stripe_cap_$idempotencyKey")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData(formData))
+                .retrieve()
+                .awaitBody<StripeChargeResponse>()
+
+            ProviderAuthorizationResult(
+                success = true,
+                providerReference = response.id
+            )
+        } catch (e: WebClientResponseException) {
+            log.warn("Stripe API returned error on capture: ${e.statusCode} - ${e.responseBodyAsString}")
+            val errorBody = try { e.getResponseBodyAs(StripeErrorResponse::class.java) } catch (_: Exception) { null }
+            ProviderAuthorizationResult(
+                success = false,
+                providerReference = null,
+                errorCode = errorBody?.error?.code ?: "capture_failed"
+            )
+        } catch (e: Exception) {
+            log.error("Network error communicating with Stripe for capture", e)
+            throw e
+        }
+    }
+    
     override suspend fun refund(
         providerReference: String,
         amount: BigDecimal?,
