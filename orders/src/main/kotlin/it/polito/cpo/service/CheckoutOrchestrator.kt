@@ -121,13 +121,15 @@ class CheckoutOrchestrator(
             val paymentResponse = paymentClient.authorizePayment(
                 PaymentRequest(
                     orderId = orderId,
+                    principalId = order.userId,
                     amount = order.totalAmount,
-                    idempotencyKey = "pay-$idempotencyKey"
+                    currency = "EUR",
+                    paymentMethodToken = request.paymentMethodToken
                 ),
                 idempotencyKey = "pay-$idempotencyKey"
             )
 
-            if (paymentResponse.status != PaymentStatus.AUTHORIZED) {
+            if (paymentResponse.status != it.polito.cpo.contracts.payments.PaymentStatus.AUTHORIZED) {
                 throw IllegalStateException("Payment authorization declined: ${paymentResponse.status}")
             }
 
