@@ -2,6 +2,30 @@ version: '3.8'
 
 services:
   # ==========================================
+  # Frontend (React SPA, served by nginx behind Traefik at the site root)
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Public, non-secret build config (07b slide 25). Keycloak stays reachable at the
+        # host-facing 8081 for the browser redirect; API is same-origin via the gateway.
+        VITE_KEYCLOAK_ISSUER: http://localhost:8081/realms/eurotransit
+        VITE_KEYCLOAK_CLIENT_ID: eurotransit-frontend
+        VITE_API_BASE: /api
+    image: eurotransit/frontend:local
+    container_name: eurotransit-frontend
+    expose:
+      - "8080"
+    labels:
+      - "traefik.enable=true"
+      # Lowest priority: API routers (/api/*) match first; the SPA catches everything else.
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
+
+  # ==========================================
   # Application Services
   # ==========================================
   catalog:
