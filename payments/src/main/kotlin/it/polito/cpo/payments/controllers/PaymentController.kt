@@ -18,7 +18,6 @@ class PaymentController(
     @PostMapping("/authorize")
     suspend fun authorizePayment(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
-        @RequestHeader("X-Correlation-Id", required = false) correlationId: String?,
         @RequestHeader("Authorization", required = false) authorizationHeader: String?,
         @RequestBody request: PaymentRequest
     ): ResponseEntity<PaymentResponse> {
@@ -29,8 +28,7 @@ class PaymentController(
             amount = request.amount,
             currency = request.currency,
             paymentMethodToken = request.paymentMethodToken,
-            idempotencyKey = idempotencyKey,
-            correlationId = correlationId
+            idempotencyKey = idempotencyKey
         )
 
         val httpStatus = when (response.status) {
@@ -67,7 +65,6 @@ class PaymentController(
     @PostMapping("/capture")
     suspend fun capturePayment(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
-        @RequestHeader("X-Correlation-Id", required = false) correlationId: String?,
         @RequestHeader("Authorization", required = false) authorizationHeader: String?,
         @RequestBody request: it.polito.cpo.contracts.payments.PaymentCaptureRequest
     ): ResponseEntity<PaymentResponse> {
@@ -75,8 +72,7 @@ class PaymentController(
         val response = paymentService.capture(
             orderId = request.orderId.toString(),
             amount = request.amount,
-            idempotencyKey = idempotencyKey,
-            correlationId = correlationId
+            idempotencyKey = idempotencyKey
         )
 
         val httpStatus = when (response.status) {

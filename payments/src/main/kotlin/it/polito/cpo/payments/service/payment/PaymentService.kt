@@ -35,8 +35,7 @@ class PaymentService(
         amount: BigDecimal,
         currency: String,
         paymentMethodToken: String,
-        idempotencyKey: String,
-        correlationId: String?
+        idempotencyKey: String
     ): PaymentResponse {
         
         val fingerprint = "$orderId-$amount-$currency-$paymentMethodToken"
@@ -88,7 +87,7 @@ class PaymentService(
 
         // 5. Emit event
         val eventType = if (result.success) "payment-authorized" else "payment-declined"
-        publishEvent(eventType, orderId, principalId, authorization, correlationId)
+        publishEvent(eventType, orderId, principalId, authorization)
 
         return response
     }
@@ -156,7 +155,7 @@ class PaymentService(
 
         // 6. Emit event
         val eventType = if (result.success) "payment-refunded" else "payment-refund-failed"
-        publishEvent(eventType, orderId, authorization.principalId, paymentRefund, null)
+        publishEvent(eventType, orderId, authorization.principalId, paymentRefund)
 
         return response
     }
@@ -165,8 +164,7 @@ class PaymentService(
     override suspend fun capture(
         orderId: String,
         amount: BigDecimal,
-        idempotencyKey: String,
-        correlationId: String?
+        idempotencyKey: String
     ): PaymentResponse {
         
         val fingerprint = "capture-$orderId-$amount"
@@ -199,9 +197,6 @@ class PaymentService(
 
         if (result.success) {
             // Update auth status
-            // Note: Since we fetch from DB, isNewRecord is false for updates, but we need to ensure it's not overriding.
-            // Spring Data R2DBC will just issue an UPDATE since isNew() returns false by default for this object.
-            // Actually, we made isNewRecord = false by default in the class.
             paymentAuthorizationRepository.save(authorization.copy(status = "CAPTURED"))
         }
 
@@ -218,18 +213,18 @@ class PaymentService(
         idempotencyRepository.save(idempotencyRecord)
 
         val eventType = if (result.success) "payment-captured" else "payment-capture-failed"
-        publishEvent(eventType, orderId, authorization.principalId, authorization, correlationId)
+        publishEvent(eventType, orderId, authorization.principalId, authorization)
 
         return response
     }
 
-    private fun publishEvent(eventType: String, orderId: String, principalId: String, payload: Any, explicitCorrelationId: String?) {
+    private fun publishEvent(eventType: String, orderId: String, principalId: String, payload: Any) {
         val event = mapOf(
             "eventId" to java.util.UUID.randomUUID().toString(),
             "eventType" to eventType,
             "schemaVersion" to 1,
             "occurredAt" to LocalDateTime.now().toString(),
-            "correlationId" to (explicitCorrelationId ?: org.slf4j.MDC.get("correlationId")),
+            "correlationId" to (org.slf4j.MDC.get("correlationId") ?: ""),
             "orderId" to orderId,
             "principalId" to principalId,
             "payload" to payload
