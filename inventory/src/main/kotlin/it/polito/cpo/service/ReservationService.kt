@@ -22,6 +22,8 @@ import java.time.OffsetDateTime
 import java.util.UUID
 import it.polito.cpo.event.KafkaEventPublisher
 
+import org.slf4j.LoggerFactory
+
 @Service
 class ReservationService(
     private val seatRepository: SeatRepository,
@@ -30,6 +32,7 @@ class ReservationService(
     private val objectMapper: ObjectMapper,
     private val eventPublisher: KafkaEventPublisher
 ) {
+    private val logger = LoggerFactory.getLogger(ReservationService::class.java)
 
     /**
      * Generates an SHA-256 fingerprint of the request payload to detect idempotency collisions.
@@ -62,6 +65,7 @@ class ReservationService(
                 )
             }
             if (existingRecord.responseBody != null) {
+                logger.info("Returning cached reservation response for idempotency key: {}", idempotencyKey)
                 return objectMapper.readValue(
                     existingRecord.responseBody,
                     ReservationResponse::class.java
@@ -105,6 +109,7 @@ class ReservationService(
 
         // Publish Kafka event based on outcome
         if (isSuccess) {
+            logger.info("Successfully reserved seats for order: {} by principal: {}", request.orderId, principalId)
             val event = InventoryReservedEvent(
                 correlationId = correlationId,
                 orderId = request.orderId,
@@ -117,6 +122,7 @@ class ReservationService(
             )
             eventPublisher.publishInventoryReserved(event)
         } else {
+            logger.info("Failed to reserve seats for order: {} by principal: {}", request.orderId, principalId)
             val event = InventoryFailedEvent(
                 correlationId = correlationId,
                 orderId = request.orderId,
@@ -140,6 +146,7 @@ class ReservationService(
         val reservation = reservationRepository.findById(reservationId)
         
         if (reservation != null && reservation.status == ReservationStatus.HELD.name) {
+            logger.info("Releasing reservation: {} for order: {}", reservationId, reservation.orderId)
             seatRepository.releaseSeats(reservationId)
             
             val updatedReservation = reservation.copy(
@@ -147,6 +154,8 @@ class ReservationService(
                 isNewRecord = false
             )
             reservationRepository.save(updatedReservation)
+        } else {
+            logger.info("Ignored release request for reservation: {} (not found or already cancelled)", reservationId)
         }
     }
 }

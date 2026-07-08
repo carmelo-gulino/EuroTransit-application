@@ -18,7 +18,7 @@ class SecurityConfig {
             .authorizeExchange {
                 it.pathMatchers(*EuroTransitPaths.HEALTH_ENDPOINTS).permitAll()
                 it.pathMatchers("/actuator/prometheus").permitAll()
-                it.pathMatchers("/api/inventory/**").hasAuthority(EuroTransitAutdovreihorities.SERVICE)
+                it.pathMatchers("/api/inventory/**").hasAuthority(EuroTransitAuthorities.SERVICE)
                 it.anyExchange().denyAll()
             }
             .oauth2ResourceServer {
