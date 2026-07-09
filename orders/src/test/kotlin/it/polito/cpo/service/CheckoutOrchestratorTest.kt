@@ -92,7 +92,7 @@ class CheckoutOrchestratorTest {
 
     @Suppress("UNCHECKED_CAST")
     private class NoopEventPublisher :
-        KafkaEventPublisher(mock(KafkaTemplate::class.java) as KafkaTemplate<String, Any>) {
+        KafkaEventPublisher(mock(KafkaTemplate::class.java) as KafkaTemplate<String, String>, mock(ObjectMapper::class.java)) {
         override fun publishOrderPlaced(event: OrderPlacedEvent) {}
         override fun publishOrderConfirmed(event: OrderConfirmedEvent) {}
         override fun publishNotificationRequested(event: NotificationRequestedEvent) {}
