@@ -160,7 +160,7 @@ class CheckoutPipelineIntegrationTest {
         val reservedOrderIds = CopyOnWriteArrayList<UUID>()
         val releasedReservationIds = ConcurrentHashMap.newKeySet<String>()
 
-        override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String): ReservationResponse {
+        override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String, userId: String): ReservationResponse {
             reservedOrderIds.add(request.orderId)
             return ReservationResponse("res-${request.orderId}", ReservationStatus.HELD, LocalDateTime.now().plusMinutes(10))
         }

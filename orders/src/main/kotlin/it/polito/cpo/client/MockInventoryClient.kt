@@ -11,7 +11,7 @@ import java.util.UUID
 @Component
 @Profile("dev")
 class MockInventoryClient : InventoryClient {
-    override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String): ReservationResponse {
+    override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String, userId: String): ReservationResponse {
         return ReservationResponse(
             reservationId = UUID.randomUUID().toString(),
             status = ReservationStatus.HELD,

@@ -43,11 +43,12 @@ class WebClientInventoryClient(
     // Inventory is the consistency boundary: keep the timeout short.
     private val timeout = Duration.ofSeconds(2)
 
-    override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String): ReservationResponse {
+    override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String, userId: String): ReservationResponse {
         return webClient.post()
             .uri("/api/inventory/reservations")
             .contentType(MediaType.APPLICATION_JSON)
             .header("Idempotency-Key", idempotencyKey)
+            .header("X-User-Id", userId)
             .bodyValue(request)
             .retrieve()
             .bodyToMono(ReservationResponse::class.java)

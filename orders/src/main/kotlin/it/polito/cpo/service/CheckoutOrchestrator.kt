@@ -139,7 +139,8 @@ class CheckoutOrchestrator(
                     seats = order.seats.split(","),
                     routeId = order.routeId
                 ),
-                idempotencyKey = "inv-$orderId"
+                idempotencyKey = "inv-$orderId",
+                userId = order.userId
             )
 
             if (reservationResponse.status != ReservationStatus.HELD) {

@@ -75,7 +75,7 @@ class CheckoutOrchestratorTest {
     }
 
     private class StubInventoryClient(private val status: ReservationStatus = ReservationStatus.HELD) : InventoryClient {
-        override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String): ReservationResponse =
+        override suspend fun reserveSeats(request: ReservationRequest, idempotencyKey: String, userId: String): ReservationResponse =
             ReservationResponse("res-1", status, LocalDateTime.now().plusMinutes(10))
 
         override suspend fun releaseSeats(reservationId: String, idempotencyKey: String) {}
