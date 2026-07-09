@@ -26,4 +26,8 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
 
     runtimeOnly("org.postgresql:r2dbc-postgresql")
+
+    // Integration tests: real Postgres (R2DBC + Flyway) via Testcontainers + embedded Kafka.
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.testcontainers:postgresql:1.20.4")
 }
