@@ -7,6 +7,9 @@ interface CheckoutState {
   routeId?: string;
   price?: number;
   currency?: string;
+  origin?: string;
+  destination?: string;
+  fareClass?: string;
 }
 
 /**
@@ -72,6 +75,16 @@ export function CheckoutPage() {
   return (
     <>
       <h1>Checkout</h1>
+      {state.origin && state.destination && (
+        <div className="card">
+          <div className="route-card__cities">
+            {state.origin}
+            <span className="arrow">→</span>
+            {state.destination}
+          </div>
+          {state.fareClass && <span className="muted">{state.fareClass}</span>}
+        </div>
+      )}
       <form className="card" onSubmit={onSubmit}>
         <label htmlFor="routeId">Route</label>
         <input id="routeId" value={routeId} onChange={(e) => setRouteId(e.target.value)} />

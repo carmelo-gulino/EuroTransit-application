@@ -50,14 +50,25 @@ export function OrderStatusPage() {
     <>
       <h1>Order</h1>
       <div className="card">
-        <div>
-          Status: <span className={`status ${order.status}`}>{order.status}</span>
+        <div className="summary-line">
+          <span className="label">Status</span>
+          <span className={`status ${order.status}`}>{order.status}</span>
         </div>
-        <div className="muted">Order {order.orderId}</div>
-        <div>Route: {order.routeId}</div>
-        <div>Seats: {order.seats.join(", ")}</div>
-        <div>
-          Total: {order.totalAmount.toFixed(2)}
+        <div className="summary-line">
+          <span className="label">Order</span>
+          <span className="value">{order.orderId}</span>
+        </div>
+        <div className="summary-line">
+          <span className="label">Route</span>
+          <span className="value">{order.routeId}</span>
+        </div>
+        <div className="summary-line">
+          <span className="label">Seats</span>
+          <span className="value">{order.seats.join(", ")}</span>
+        </div>
+        <div className="summary-line">
+          <span className="label">Total</span>
+          <span className="value">{order.totalAmount.toFixed(2)}</span>
         </div>
         {!isTerminal(order.status) && <p className="muted">Refreshing…</p>}
         {order.status === "CONFIRMED" && <p>Your booking is confirmed. 🎉</p>}

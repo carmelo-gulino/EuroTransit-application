@@ -1,23 +1,329 @@
+/*
+ * EuroTransit — visual system.
+ * Single accent (rail blue), one radius scale, tabular numerals for times/prices.
+ * Light + dark via prefers-color-scheme. Motion honors prefers-reduced-motion.
+ * Presentation only; no behavioural classes were renamed.
+ */
+
 :root {
-  font-family: system-ui, -apple-system, sans-serif;
-  color: #1a1a2e;
-  background: #f5f6fa;
+  /* Neutrals (cool grey) */
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-2: #fafbfd;
+  --border: #e4e8ef;
+  --border-strong: #d3d9e3;
+  --text: #14202e;
+  --text-muted: #5a6675;
+  --text-faint: #8a93a1;
+
+  /* Brand + single interactive accent (saturation < 80%) */
+  --brand: #143257;          /* deep navy — header, headlines */
+  --accent: #2160c4;         /* interactive blue — CTAs, links */
+  --accent-hover: #1a4fa3;
+  --accent-soft: #e9f0fb;    /* tinted fill */
+  --on-accent: #ffffff;
+
+  /* Status (refined, AA text on soft fill) */
+  --ok-fill: #e3f6ea;   --ok-text: #10643a;
+  --warn-fill: #fdf2d6; --warn-text: #7a531a;
+  --bad-fill: #fce6e6;  --bad-text: #9a2430;
+
+  /* Radius scale (locked): cards / controls / pills */
+  --r-card: 14px;
+  --r-control: 10px;
+  --r-pill: 999px;
+
+  /* Shadows tinted to the neutral hue (no pure black) */
+  --shadow-sm: 0 1px 2px rgba(20, 32, 46, 0.05), 0 1px 3px rgba(20, 32, 46, 0.04);
+  --shadow-md: 0 4px 12px rgba(20, 32, 46, 0.07), 0 2px 4px rgba(20, 32, 46, 0.04);
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: light;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e141c;
+    --surface: #161e28;
+    --surface-2: #131b24;
+    --border: #253141;
+    --border-strong: #33445a;
+    --text: #e8edf4;
+    --text-muted: #9aa7b6;
+    --text-faint: #6b7887;
+
+    --brand: #e8edf4;
+    --accent: #5b9bf5;
+    --accent-hover: #7bafff;
+    --accent-soft: #16283f;
+    --on-accent: #0e141c;
+
+    --ok-fill: #12331f;   --ok-text: #7fdca3;
+    --warn-fill: #38290d; --warn-text: #f0c877;
+    --bad-fill: #3a1618;  --bad-text: #f2a1a8;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.4);
+
+    color-scheme: dark;
+  }
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; }
-.container { max-width: 880px; margin: 0 auto; padding: 1.5rem; }
-.nav { display: flex; gap: 1rem; align-items: center; padding: 0.75rem 1.5rem; background: #16213e; color: #fff; }
-.nav a { color: #cbd5e1; text-decoration: none; }
-.nav a:hover { color: #fff; }
+
+/* ---------- Layout ---------- */
+.container {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+h1 {
+  font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.1rem);
+  letter-spacing: -0.02em;
+  color: var(--brand);
+  margin: 0 0 1.25rem;
+}
+
+/* ---------- Navigation ---------- */
+.nav {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  height: 64px;
+  padding: 0 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.94rem;
+  transition: color 0.2s var(--ease);
+}
+.nav a:first-child {
+  color: var(--brand);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 1.06rem;
+}
+.nav a:hover { color: var(--accent); }
 .nav .spacer { flex: 1; }
-.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
-.btn { background: #0f3460; color: #fff; border: 0; border-radius: 6px; padding: 0.5rem 1rem; cursor: pointer; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.status { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.85rem; }
-.status.CONFIRMED { background: #dcfce7; color: #166534; }
-.status.FAILED, .status.CANCELLED { background: #fee2e2; color: #991b1b; }
-.status.ACCEPTED, .status.RESERVING, .status.PAYMENT_PENDING { background: #fef9c3; color: #854d0e; }
-.error { color: #991b1b; }
-.muted { color: #64748b; }
-label { display: block; margin: 0.5rem 0 0.25rem; font-size: 0.9rem; }
-input { width: 100%; padding: 0.4rem; border: 1px solid #cbd5e1; border-radius: 6px; }
+.nav .muted { font-size: 0.9rem; }
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: 1.25rem 1.35rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Route card (browse) ---------- */
+.route-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+.route-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+}
+.route-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.35rem 0.5rem;
+}
+.route-card__cities {
+  font-size: 1.08rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.route-card__cities .arrow { color: var(--accent); margin: 0 0.35rem; }
+
+.badge {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--r-pill);
+  padding: 0.28rem 0.7rem;
+}
+
+/* Journey timeline: time ●───────● time */
+.journey {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.35rem 1.35rem 1.1rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.journey__time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+.journey__track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-faint);
+}
+.journey__line {
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--border-strong));
+  position: relative;
+}
+.journey__dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.journey__dot--hollow {
+  background: var(--surface);
+  border: 2px solid var(--accent);
+}
+.journey__meta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+/* Fare rows */
+.fares { border-top: 1px solid var(--border); }
+.fare-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.35rem;
+}
+.fare-row + .fare-row { border-top: 1px solid var(--border); }
+.fare-row__class {
+  font-weight: 550;
+  font-size: 0.9rem;
+  color: var(--text);
+  flex: none;
+  min-width: 6.5rem;
+}
+.fare-row__cond {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.price {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.12rem;
+  color: var(--brand);
+  white-space: nowrap;
+}
+.price .cur { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-left: 0.15rem; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: var(--r-control);
+  padding: 0.55rem 1.1rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), transform 0.06s var(--ease);
+}
+.btn:hover { background: var(--accent-hover); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--sm { padding: 0.42rem 0.9rem; font-size: 0.86rem; }
+
+/* ---------- Status pills ---------- */
+.status {
+  display: inline-block;
+  padding: 0.2rem 0.7rem;
+  border-radius: var(--r-pill);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.status.CONFIRMED { background: var(--ok-fill); color: var(--ok-text); }
+.status.FAILED, .status.CANCELLED { background: var(--bad-fill); color: var(--bad-text); }
+.status.ACCEPTED, .status.RESERVING, .status.PAYMENT_PENDING { background: var(--warn-fill); color: var(--warn-text); }
+
+/* ---------- Text helpers ---------- */
+.error { color: var(--bad-text); }
+.muted { color: var(--text-muted); }
+
+/* ---------- Forms ---------- */
+label {
+  display: block;
+  margin: 0.9rem 0 0.35rem;
+  font-size: 0.86rem;
+  font-weight: 550;
+  color: var(--text);
+}
+input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-control);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+input::placeholder { color: var(--text-faint); }
+
+/* ---------- Order summary line (checkout / status) ---------- */
+.summary-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  font-size: 0.94rem;
+}
+.summary-line + .summary-line { border-top: 1px solid var(--border); }
+.summary-line .label { color: var(--text-muted); }
+.summary-line .value { font-variant-numeric: tabular-nums; font-weight: 550; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
