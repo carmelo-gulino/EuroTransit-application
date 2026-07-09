@@ -194,6 +194,7 @@ class PaymentService(
             "principalId" to principalId,
             "payload" to payload
         )
-        kafkaTemplate.send(eventType, orderId, event)
+
+        kafkaTemplate.send(eventType, orderId, objectMapper.writeValueAsString(event))
     }
 }

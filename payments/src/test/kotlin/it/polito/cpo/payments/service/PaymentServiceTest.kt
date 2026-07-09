@@ -21,6 +21,8 @@ import org.springframework.transaction.ReactiveTransaction
 import org.springframework.transaction.ReactiveTransactionManager
 import org.springframework.transaction.TransactionDefinition
 import reactor.core.publisher.Mono
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.module.kotlin.kotlinModule
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.UUID
@@ -161,6 +163,37 @@ class PaymentServiceTest {
 
         val response = paymentService.refund("order-123", null, "key-refund-full")
         assertEquals(IPaymentService.RefundStatus.REFUNDED, response.status)
+    }
+
+    @Test
+    fun `publishEvent - serializes payload with java-time fields to a JSON string via the real ObjectMapper`() = runTest {
+        // Regression test for the original review concern: the Kafka value serializer is a plain
+        // StringSerializer, so the event must be pre-serialized to JSON; and PaymentAuthorization
+        // carries LocalDateTime fields, which must round-trip through the real (non-mocked) ObjectMapper.
+        val realObjectMapper = JsonMapper.builder().addModule(kotlinModule()).build()
+        val localKafkaTemplate = mockKafkaTemplate()
+        val service = PaymentService(
+            FakePaymentProvider(),
+            FakeIdempotencyRepository() as IdempotencyRepository,
+            FakePaymentAuthorizationRepository() as PaymentAuthorizationRepository,
+            FakePaymentRefundRepository() as PaymentRefundRepository,
+            localKafkaTemplate,
+            realObjectMapper,
+            NoopReactiveTransactionManager()
+        )
+
+        service.authorize("order-json", "user1", BigDecimal.TEN, "EUR", "tok_visa", "key-json")
+
+        val captor = org.mockito.ArgumentCaptor.forClass(String::class.java)
+        org.mockito.Mockito.verify(localKafkaTemplate).send(
+            org.mockito.Mockito.eq("payment-authorized"),
+            org.mockito.Mockito.eq("order-json"),
+            captor.capture()
+        )
+
+        val parsed = realObjectMapper.readTree(captor.value)
+        assertEquals("payment-authorized", parsed.get("eventType").asText())
+        org.junit.jupiter.api.Assertions.assertTrue(parsed.get("payload").has("createdAt"))
     }
 
     class FakePaymentProvider : IPaymentProvider {
