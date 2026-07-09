@@ -3,10 +3,10 @@ package it.polito.cpo.controller
 import it.polito.cpo.contracts.inventory.ReservationRequest
 import it.polito.cpo.contracts.inventory.ReservationResponse
 import it.polito.cpo.contracts.inventory.ReservationStatus
-import it.polito.cpo.event.KafkaEventPublisher
 import it.polito.cpo.observability.ApiException
 import it.polito.cpo.observability.GlobalErrorHandler
 import it.polito.cpo.repository.IdempotencyRecordRepository
+import it.polito.cpo.repository.OutboxEventRepository
 import it.polito.cpo.repository.ReservationRepository
 import it.polito.cpo.repository.SeatRepository
 import it.polito.cpo.security.EuroTransitAuthorities
@@ -71,8 +71,8 @@ class InventoryControllerTest {
         Mockito.mock(SeatRepository::class.java),
         Mockito.mock(ReservationRepository::class.java),
         Mockito.mock(IdempotencyRecordRepository::class.java),
+        Mockito.mock(OutboxEventRepository::class.java),
         Mockito.mock(ObjectMapper::class.java),
-        Mockito.mock(KafkaEventPublisher::class.java),
         Mockito.mock(TransactionalOperator::class.java)
     ) {
         var lastReserveRequest: ReservationRequest? = null

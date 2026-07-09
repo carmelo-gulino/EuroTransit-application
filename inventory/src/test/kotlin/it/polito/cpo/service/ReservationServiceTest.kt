@@ -4,7 +4,8 @@ import it.polito.cpo.contracts.events.InventoryFailedEvent
 import it.polito.cpo.contracts.events.InventoryReservedEvent
 import it.polito.cpo.contracts.inventory.ReservationRequest
 import it.polito.cpo.contracts.inventory.ReservationStatus
-import it.polito.cpo.event.KafkaEventPublisher
+import it.polito.cpo.model.OutboxEvent
+import it.polito.cpo.repository.OutboxEventRepository
 import it.polito.cpo.model.IdempotencyRecord
 import it.polito.cpo.model.Reservation
 import it.polito.cpo.repository.IdempotencyRecordRepository
@@ -17,7 +18,6 @@ import org.junit.jupiter.api.assertThrows
 import org.mockito.Mockito
 import org.springframework.http.HttpStatus
 import it.polito.cpo.observability.ApiException
-import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.transaction.ReactiveTransaction
 import org.springframework.transaction.reactive.TransactionCallback
 import org.springframework.transaction.reactive.TransactionalOperator
@@ -87,19 +87,13 @@ class ReservationServiceTest {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private class FakeKafkaEventPublisher : KafkaEventPublisher(
-        Mockito.mock(KafkaTemplate::class.java) as KafkaTemplate<String, Any>
-    ) {
-        val reservedEvents = mutableListOf<InventoryReservedEvent>()
-        val failedEvents = mutableListOf<InventoryFailedEvent>()
-        
-        override fun publishInventoryReserved(event: InventoryReservedEvent) {
-            reservedEvents.add(event)
-        }
-        
-        override fun publishInventoryFailed(event: InventoryFailedEvent) {
-            failedEvents.add(event)
+    private class FakeOutboxEventRepository(
+        private val delegate: OutboxEventRepository = Mockito.mock(OutboxEventRepository::class.java)
+    ) : OutboxEventRepository by delegate {
+        val store = mutableListOf<OutboxEvent>()
+        override suspend fun <S : OutboxEvent> save(entity: S): S {
+            store.add(entity)
+            return entity
         }
     }
 
@@ -107,13 +101,13 @@ class ReservationServiceTest {
         seatRepo: FakeSeatRepository,
         resRepo: FakeReservationRepository,
         idemRepo: FakeIdempotencyRecordRepository,
-        eventPub: FakeKafkaEventPublisher
+        outboxRepo: FakeOutboxEventRepository
     ) = ReservationService(
         seatRepository = seatRepo,
         reservationRepository = resRepo,
         idempotencyRecordRepository = idemRepo,
         objectMapper = mapper,
-        eventPublisher = eventPub,
+        outboxEventRepository = outboxRepo,
         transactionalOperator = fakeTransactionalOperator
     )
 
@@ -122,8 +116,8 @@ class ReservationServiceTest {
         val seatRepo = FakeSeatRepository(seatsAvailable = true)
         val resRepo = FakeReservationRepository()
         val idemRepo = FakeIdempotencyRecordRepository()
-        val eventPub = FakeKafkaEventPublisher()
-        val service = buildService(seatRepo, resRepo, idemRepo, eventPub)
+        val outboxRepo = FakeOutboxEventRepository()
+        val service = buildService(seatRepo, resRepo, idemRepo, outboxRepo)
 
         val request = ReservationRequest(UUID.randomUUID(), listOf("1A", "1B"), "route-1")
         val principalId = "user-1"
@@ -147,18 +141,9 @@ class ReservationServiceTest {
             "The idempotency record must be saved"
         )
         
-        assertEquals(
-            1,
-            eventPub.reservedEvents.size,
-            "Exactly one Reserved event should be emitted"
-        )
-        assertEquals(
-            0,
-            eventPub.failedEvents.size,
-            "No Failed event should be emitted"
-        )
-        
-        val emittedEvent = eventPub.reservedEvents.first()
+        assertEquals(1, outboxRepo.store.size, "Exactly one OutboxEvent should be emitted")
+
+        val emittedEvent = mapper.readValue(outboxRepo.store.first().payload, InventoryReservedEvent::class.java)
         assertEquals(correlationId, emittedEvent.correlationId)
         assertEquals(request.orderId, emittedEvent.orderId)
         assertEquals(principalId, emittedEvent.principalId)
@@ -169,8 +154,8 @@ class ReservationServiceTest {
         val seatRepo = FakeSeatRepository(seatsAvailable = false)
         val resRepo = FakeReservationRepository()
         val idemRepo = FakeIdempotencyRecordRepository()
-        val eventPub = FakeKafkaEventPublisher()
-        val service = buildService(seatRepo, resRepo, idemRepo, eventPub)
+        val outboxRepo = FakeOutboxEventRepository()
+        val service = buildService(seatRepo, resRepo, idemRepo, outboxRepo)
 
         val request = ReservationRequest(UUID.randomUUID(), listOf("1A", "1B"), "route-1")
         val principalId = "user-1"
@@ -193,11 +178,10 @@ class ReservationServiceTest {
             idemRepo.store.containsKey("$idempotencyKey-$principalId"), 
             "The idempotency record MUST be saved to cache the failure"
         )
+
+        assertEquals(1, outboxRepo.store.size, "Exactly one OutboxEvent should be emitted")
         
-        assertEquals(0, eventPub.reservedEvents.size)
-        assertEquals(1, eventPub.failedEvents.size)
-        
-        val emittedEvent = eventPub.failedEvents.first()
+        val emittedEvent = mapper.readValue(outboxRepo.store.first().payload, InventoryFailedEvent::class.java)
         assertEquals(correlationId, emittedEvent.correlationId)
         assertEquals(request.orderId, emittedEvent.orderId)
         assertEquals(principalId, emittedEvent.principalId)
@@ -208,8 +192,8 @@ class ReservationServiceTest {
         val seatRepo = FakeSeatRepository()
         val resRepo = FakeReservationRepository()
         val idemRepo = FakeIdempotencyRecordRepository()
-        val eventPub = FakeKafkaEventPublisher()
-        val service = buildService(seatRepo, resRepo, idemRepo, eventPub)
+        val outboxRepo = FakeOutboxEventRepository()
+        val service = buildService(seatRepo, resRepo, idemRepo, outboxRepo)
 
         val request = ReservationRequest(UUID.randomUUID(), listOf("1A", "1B"), "route-1")
         val principalId = "user-1"
@@ -241,9 +225,8 @@ class ReservationServiceTest {
         assertEquals(ReservationStatus.HELD, response.status)
         
         assertTrue(resRepo.store.isEmpty(), "No new reservation should be saved")
-        
-        assertEquals(0, eventPub.reservedEvents.size)
-        assertEquals(0, eventPub.failedEvents.size)
+
+        assertEquals(0, outboxRepo.store.size)
     }
 
     @Test
@@ -253,7 +236,7 @@ class ReservationServiceTest {
             FakeSeatRepository(),
             FakeReservationRepository(),
             idemRepo,
-            FakeKafkaEventPublisher()
+            FakeOutboxEventRepository()
         )
 
         val request = ReservationRequest(UUID.randomUUID(), listOf("1A", "1B"), "route-1")
@@ -286,7 +269,7 @@ class ReservationServiceTest {
             seatRepo,
             resRepo,
             FakeIdempotencyRecordRepository(),
-            FakeKafkaEventPublisher()
+            FakeOutboxEventRepository()
         )
 
         val reservationId = "res-cancel-1"
@@ -312,7 +295,7 @@ class ReservationServiceTest {
             seatRepo,
             resRepo,
             FakeIdempotencyRecordRepository(),
-            FakeKafkaEventPublisher()
+            FakeOutboxEventRepository()
         )
 
         service.releaseReservation("non-existent")
