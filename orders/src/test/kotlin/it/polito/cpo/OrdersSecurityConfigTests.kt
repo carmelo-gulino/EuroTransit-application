@@ -29,9 +29,13 @@ import java.time.Instant
  * `controllers = [OrdersSecurityProbeController]` excludes the real controller from the slice, and the
  * stub returns canned responses so we assert the SECURITY rules in isolation (not business behaviour:
  * the real controller returns 202 and requires a UUID path, which is orthogonal to these checks).
+ *
+ * The stub controller and test configuration are NESTED classes on purpose: as top-level classes in
+ * the `it.polito.cpo` package they would be component-scanned by any full `@SpringBootTest` in this
+ * module and clash with the real OrderController (see CheckoutPipelineIntegrationTest).
  */
-@WebFluxTest(controllers = [OrdersSecurityProbeController::class])
-@Import(SecurityConfig::class, OrdersSecurityTestConfiguration::class)
+@WebFluxTest(controllers = [OrdersSecurityConfigTests.OrdersSecurityProbeController::class])
+@Import(SecurityConfig::class, OrdersSecurityConfigTests.OrdersSecurityTestConfiguration::class)
 class OrdersSecurityConfigTests @Autowired constructor(
     private val webTestClient: WebTestClient,
 ) {
@@ -86,32 +90,32 @@ class OrdersSecurityConfigTests @Autowired constructor(
             .exchange()
             .expectStatus().isForbidden
     }
-}
 
-@TestConfiguration
-class OrdersSecurityTestConfiguration {
-    @Bean
-    @Primary
-    fun testJwtDecoder(): ReactiveJwtDecoder =
-        ReactiveJwtDecoder { token -> Mono.just(testJwt(token)) }
+    @TestConfiguration
+    class OrdersSecurityTestConfiguration {
+        @Bean
+        @Primary
+        fun testJwtDecoder(): ReactiveJwtDecoder =
+            ReactiveJwtDecoder { token -> Mono.just(testJwt(token)) }
 
-    @Bean
-    fun ordersSecurityProbeController(): OrdersSecurityProbeController =
-        OrdersSecurityProbeController()
-}
+        @Bean
+        fun ordersSecurityProbeController(): OrdersSecurityProbeController =
+            OrdersSecurityProbeController()
+    }
 
-@RestController
-class OrdersSecurityProbeController {
-    @PostMapping("/api/orders")
-    fun createOrder(): Map<String, String> = mapOf("status" to "accepted")
+    @RestController
+    class OrdersSecurityProbeController {
+        @PostMapping("/api/orders")
+        fun createOrder(): Map<String, String> = mapOf("status" to "accepted")
 
-    @GetMapping("/api/orders/{orderId}")
-    fun readOrder(@PathVariable orderId: String): Map<String, String> = mapOf("orderId" to orderId)
+        @GetMapping("/api/orders/{orderId}")
+        fun readOrder(@PathVariable orderId: String): Map<String, String> = mapOf("orderId" to orderId)
 
-    // Stands in for the actuator health endpoint, which is not booted in this web slice.
-    // It lets us verify the SecurityConfig rule that /actuator/health/** is permitAll.
-    @GetMapping("/actuator/health/liveness")
-    fun liveness(): Map<String, String> = mapOf("status" to "UP")
+        // Stands in for the actuator health endpoint, which is not booted in this web slice.
+        // It lets us verify the SecurityConfig rule that /actuator/health/** is permitAll.
+        @GetMapping("/actuator/health/liveness")
+        fun liveness(): Map<String, String> = mapOf("status" to "UP")
+    }
 }
 
 private fun testJwt(token: String): Jwt {

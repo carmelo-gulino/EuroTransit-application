@@ -39,12 +39,11 @@ class OrderController(
         val order = orderService.getOrderById(orderId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found")
 
-        // Enforce ownership
+        // Enforce ownership: the owner, or back-office staff (the `operations` realm role).
         if (order.userId != userId) {
-            val realmAccess = jwt.getClaim<Map<String, Any>>("realm_access")
-            val roles = realmAccess?.get("roles") as? List<*>
-            val isAdmin = roles?.contains("admin") == true || roles?.contains("operator") == true
-            if (!isAdmin) {
+            val roles = jwt.getClaim<Map<String, Any>>("realm_access")?.get("roles") as? List<*>
+            val isStaff = roles?.contains("operations") == true
+            if (!isStaff) {
                 throw ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to order")
             }
         }
