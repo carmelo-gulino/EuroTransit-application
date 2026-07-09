@@ -25,3 +25,6 @@ compose-up:
 
 compose-down:
     docker compose down
+
+customer-token:
+    @./scripts/local-customer-token.sh
