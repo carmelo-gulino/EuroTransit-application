@@ -348,51 +348,31 @@ jobs:
         if: needs.build-catalog.result == 'success'
         uses: mikefarah/yq@v4.47.2
         with:
-          cmd: >
-            yq e
-            '.catalog.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/catalog" |
-             .catalog.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"'
-            -i gitops/${{ env.GITOPS_VALUES_FILE }}
+          cmd: yq e '.catalog.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/catalog" | .catalog.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
 
       - name: Update orders image
         if: needs.build-orders.result == 'success'
         uses: mikefarah/yq@v4.47.2
         with:
-          cmd: >
-            yq e
-            '.orders.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/orders" |
-             .orders.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"'
-            -i gitops/${{ env.GITOPS_VALUES_FILE }}
+          cmd: yq e '.orders.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/orders" | .orders.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
 
       - name: Update inventory image
         if: needs.build-inventory.result == 'success'
         uses: mikefarah/yq@v4.47.2
         with:
-          cmd: >
-            yq e
-            '.inventory.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/inventory" |
-             .inventory.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"'
-            -i gitops/${{ env.GITOPS_VALUES_FILE }}
+          cmd: yq e '.inventory.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/inventory" | .inventory.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
 
       - name: Update payments image
         if: needs.build-payments.result == 'success'
         uses: mikefarah/yq@v4.47.2
         with:
-          cmd: >
-            yq e
-            '.payments.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/payments" |
-             .payments.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"'
-            -i gitops/${{ env.GITOPS_VALUES_FILE }}
+          cmd: yq e '.payments.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/payments" | .payments.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
 
       - name: Update notifications image
         if: needs.build-notifications.result == 'success'
         uses: mikefarah/yq@v4.47.2
         with:
-          cmd: >
-            yq e
-            '.notifications.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/notifications" |
-             .notifications.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"'
-            -i gitops/${{ env.GITOPS_VALUES_FILE }}
+          cmd: yq e '.notifications.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/notifications" | .notifications.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
 
       - name: Commit and push
         working-directory: gitops
