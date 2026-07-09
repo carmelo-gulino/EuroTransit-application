@@ -13,9 +13,9 @@ import java.util.UUID
 class MockPaymentClient : PaymentClient {
     override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse {
         return PaymentResponse(
-            paymentId = UUID.randomUUID().toString(),
-            status = PaymentStatus.AUTHORIZED,
-            authorizedAt = LocalDateTime.now()
+            status = it.polito.cpo.contracts.payments.PaymentStatus.AUTHORIZED,
+            providerReference = "mock_auth_id",
+            errorCode = null
         )
     }
 }
