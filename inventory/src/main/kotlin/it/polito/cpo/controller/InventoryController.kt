@@ -28,7 +28,8 @@ class InventoryController(
         @RequestBody request: ReservationRequest
     ): ResponseEntity<ReservationResponse> {
         val response = reservationService.reserveSeats(idempotencyKey, jwt.subject, correlationId, request)
-        return ResponseEntity.status(HttpStatus.CREATED).body(response)
+        val httpStatus = if (response.status == ReservationStatus.FAILED) HttpStatus.UNPROCESSABLE_ENTITY else HttpStatus.CREATED
+        return ResponseEntity.status(httpStatus).body(response)
     }
 
     @DeleteMapping("/{reservationId}")

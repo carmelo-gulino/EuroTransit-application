@@ -25,6 +25,7 @@ import it.polito.cpo.repository.OutboxEventRepository
 import org.springframework.transaction.reactive.TransactionalOperator
 import org.springframework.transaction.reactive.executeAndAwait
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DuplicateKeyException
 
 @Service
 class ReservationService(
@@ -97,7 +98,7 @@ class ReservationService(
                     principalId = principalId,
                     operation = "RESERVE",
                     requestFingerprint = fingerprint,
-                    responseStatusCode = 201,
+                    responseStatusCode = if (success) 201 else 422,
                     responseBody = objectMapper.writeValueAsString(storedResponse)
                 )
                 idempotencyRecordRepository.save(idempotencyRecord)
@@ -150,16 +151,24 @@ class ReservationService(
                 status = finalStatus,
                 expiresAt = expiresAt.toLocalDateTime()
             )
-        } catch (e: org.springframework.dao.DuplicateKeyException) {
+        } catch (e: DuplicateKeyException) {
             logger.info("Concurrent request detected for idempotency key: {}. Falling back to cached response.", idempotencyKey)
             val concurrentRecord = idempotencyRecordRepository.findByKeyAndPrincipal(idempotencyKey, principalId)
-                ?: throw ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Idempotency record lost after DuplicateKeyException")
+                ?: throw ApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    "Idempotency record lost after DuplicateKeyException"
+                )
             
             return processExistingRecord(concurrentRecord, fingerprint, idempotencyKey)
         }
     }
 
-    private fun processExistingRecord(existingRecord: IdempotencyRecord, fingerprint: String, idempotencyKey: String): ReservationResponse {
+    private fun processExistingRecord(
+        existingRecord: IdempotencyRecord,
+        fingerprint: String,
+        idempotencyKey: String
+    ): ReservationResponse {
         if (existingRecord.requestFingerprint != fingerprint) {
             throw ApiException(
                 status = HttpStatus.CONFLICT,

@@ -82,6 +82,7 @@ class InventoryControllerTest {
         
         var reserveShouldThrow: ApiException? = null
         var lastReleaseReservationId: String? = null
+        var reserveResponseStatus: ReservationStatus = ReservationStatus.HELD
 
         fun reset() {
             lastReserveRequest = null
@@ -90,6 +91,7 @@ class InventoryControllerTest {
             lastPrincipalId = null
             reserveShouldThrow = null
             lastReleaseReservationId = null
+            reserveResponseStatus = ReservationStatus.HELD
         }
 
         override suspend fun reserveSeats(
@@ -107,7 +109,7 @@ class InventoryControllerTest {
             
             return ReservationResponse(
                 "res-123",
-                ReservationStatus.HELD,
+                reserveResponseStatus,
                 LocalDateTime.now().plusMinutes(15)
             )
         }
@@ -147,6 +149,36 @@ class InventoryControllerTest {
         assertEquals(idempotencyKey, fakeService.lastIdempotencyKey)
         assertEquals(correlationId, fakeService.lastCorrelationId)
         assertEquals(userId, fakeService.lastPrincipalId)
+    }
+
+    @Test
+    fun `createReservation returns 422 Unprocessable Entity if reservation fails due to oversell`() {
+        val request = ReservationRequest(UUID.randomUUID(), listOf("1A", "1B"), "route-1")
+        val idempotencyKey = "test-idem-key"
+        val correlationId = "test-corr-id"
+        val userId = "user-123"
+
+        fakeService.reserveResponseStatus = ReservationStatus.FAILED
+
+        webClient
+            .mutateWith(
+            mockJwt()
+                .jwt { it.subject(userId) }
+                .authorities(SimpleGrantedAuthority(EuroTransitAuthorities.SERVICE))
+            )
+            .post()
+            .uri("/api/inventory/reservations")
+            .header("Idempotency-Key", idempotencyKey)
+            .header("X-Correlation-Id", correlationId)
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(request)
+            .exchange()
+            .expectStatus().isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY)
+            .expectBody()
+            .jsonPath("$.reservationId").isEqualTo("res-123")
+            .jsonPath("$.status").isEqualTo("FAILED")
+
+        assertNotNull(fakeService.lastReserveRequest, "The service should have been called")
     }
 
     @Test
