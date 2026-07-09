@@ -24,6 +24,18 @@ spring:
         jwt:
           issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8081/realms/eurotransit}
           jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://localhost:8081/realms/eurotransit/protocol/openid-connect/certs}
+      client:
+        # Service-to-service: obtain a ROLE_service token (client_credentials) to call
+        # inventory/payments. token-uri is set directly (no OIDC discovery at startup).
+        registration:
+          keycloak-service:
+            provider: keycloak
+            authorization-grant-type: client_credentials
+            client-id: ${ORDERS_SERVICE_CLIENT_ID:orders-service}
+            client-secret: ${ORDERS_SERVICE_CLIENT_SECRET:orders-service-secret}
+        provider:
+          keycloak:
+            token-uri: ${ORDERS_SERVICE_TOKEN_URI:http://localhost:8081/realms/eurotransit/protocol/openid-connect/token}
   r2dbc:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eurotransit}
     username: ${DB_USER:eurotransit}

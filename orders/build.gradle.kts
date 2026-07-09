@@ -9,6 +9,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    // Client-credentials: orders obtains a ROLE_service token to authenticate its outbound
+    // calls to inventory/payments (service-to-service).
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
 
     // Shared wire contracts (reservation/payment DTOs + Kafka event envelope)
     implementation(project(":money-path-contracts"))

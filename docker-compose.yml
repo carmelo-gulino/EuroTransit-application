@@ -50,6 +50,9 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
+      # Service-to-service: obtain the ROLE_service token from the in-network Keycloak.
+      # iss is kept consistent (localhost:8081) by KC_HOSTNAME_URL on the keycloak service.
+      ORDERS_SERVICE_TOKEN_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/token
     expose:
       - "8080"
     depends_on:
@@ -198,6 +201,11 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      # Fix the frontend/issuer URL so tokens carry a consistent `iss` regardless of whether
+      # they are obtained via the host (localhost:8081) or the in-network backchannel
+      # (keycloak:8080). Without this, orders' client-credentials token (fetched in-network)
+      # would have iss=keycloak:8080 and be rejected by the resource servers (iss=localhost:8081).
+      KC_HOSTNAME_URL: http://localhost:8081
     ports:
       - "8081:8080"
     volumes:

@@ -242,3 +242,47 @@ The module is shared: changes go through a PR reviewed by the owner of any affec
 
 - **In-memory coroutine pipeline + cooperative drain (`@PreDestroy`) (previous direction):** simplest, but only survives *graceful* shutdown; a crash still loses in-flight work.
 - **Full event choreography (a topic + cross-service consumer per stage):** maximal decoupling, but contradicts the synchronous consistency boundary for reserve/pay and is over-engineered for this scope.
+
+## ADR-012: Service-to-Service Authentication via Client Credentials
+
+**Decision:** Orders authenticates its outbound calls to Inventory and Payments with an OAuth2
+**client-credentials** token from Keycloak, carrying the `service` realm role (→ `ROLE_service`, which
+`/api/inventory/**` and `/api/payments/**` require). A dedicated confidential client `orders-service`
+with a service account holds the role; orders attaches the token as a Bearer via a
+`ServerOAuth2AuthorizedClientExchangeFilterFunction` on its WebClients. This implements the "service
+credential" half of the internal-call contract in `api-design.md` and the "Internal Service Trust" of
+ADR-005.
+
+### Why This Is Better
+
+- Client-credentials is the standard machine-to-machine grant; the token is obtained, cached and
+  refreshed by the Spring `AuthorizedClientManager`. The **service-context** manager
+  (`AuthorizedClientServiceReactiveOAuth2AuthorizedClientManager`) is used, not the request-scoped one,
+  because the checkout pipeline runs in a Kafka consumer with no `ServerWebExchange`.
+- One `orders-service` client (one `ROLE_service`) covers both downstreams.
+- Composes with the existing correlation propagation and Resilience4j on the WebClients (the clients now
+  use the auto-configured `WebClient.Builder`, which also gives client-side metrics/tracing).
+
+### Consequences
+
+- **Issuer consistency**: the token is fetched over the in-network Keycloak URL, so `iss` must match
+  what the resource servers validate. In local/compose this is pinned with `KC_HOSTNAME_URL` so `iss`
+  is always `http://localhost:8081/realms/eurotransit` regardless of host. The cluster must configure
+  the equivalent fixed frontend URL.
+- **Secrets**: the `orders-service` client secret is a local dev value in the realm import; the cluster
+  must supply it via a SealedSecret (`ORDERS_SERVICE_CLIENT_SECRET`) plus the internal
+  `ORDERS_SERVICE_TOKEN_URI`.
+- **Follow-up — propagated user context**: `api-design.md` asks for "service credential **plus**
+  propagated user context". This ADR delivers the service credential; with a client-credentials token
+  the downstream sees the *service account* as principal, not the customer. Propagating the end-user
+  identity (e.g. an `X-User-Id` header, or a principal field the downstream reads for audit) is a
+  documented follow-up requiring a coordinated contract change with Inventory/Payments. Order ownership
+  is still enforced at Orders.
+
+### Alternatives Considered
+
+- **No outbound auth (the current gap):** simplest, but Inventory/Payments require `ROLE_service` → every
+  real call returns 401 and the money-path breaks.
+- **Propagate the end-user token (token exchange / on-behalf-of):** carries the real user context, but
+  needs Keycloak token-exchange and a broader contract; heavier than needed now. Kept as the direction
+  for the user-context follow-up.
