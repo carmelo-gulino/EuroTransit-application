@@ -1,4 +1,7 @@
 spring:
+  reactor:
+    context-propagation: auto
+
   application:
     name: inventory
   security:
@@ -22,7 +25,34 @@ spring:
 server:
   port: 8082
 
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
   otlp:
     metrics:
       export:

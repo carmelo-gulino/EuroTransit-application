@@ -78,9 +78,11 @@ services:
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
       MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
-      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/eurotransit
-      SPRING_R2DBC_USERNAME: eurotransit
-      SPRING_R2DBC_PASSWORD: password
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: eurotransit
+      DB_USER: eurotransit
+      DB_PASSWORD: password
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
     expose:
@@ -138,6 +140,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: eurotransit-postgres
+    command: ["postgres", "-c", "wal_level=logical"]
     environment:
       POSTGRES_USER: eurotransit
       POSTGRES_PASSWORD: password
@@ -177,6 +180,29 @@ services:
       - "9094:9094" # Expose for local IDE access
     volumes:
       - kafka_data:/var/lib/kafka/data
+
+  debezium:
+    image: quay.io/debezium/connect:2.7.0.Final
+    container_name: eurotransit-debezium
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_configs
+      OFFSET_STORAGE_TOPIC: debezium_offsets
+      STATUS_STORAGE_TOPIC: debezium_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      # Per comodità di test evitiamo l'uso di schemi espliciti su Kafka
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka
+      - postgres
 
   traefik:
     image: traefik:v2.10

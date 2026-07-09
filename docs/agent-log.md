@@ -87,3 +87,14 @@ This log is intentionally required by the assignment. It records concrete cases 
 - **Why it was wrong:** The review was technically superficial and missed critical distributed systems flaws. The Kafka publisher executed a `CompletableFuture` fire-and-forget after the DB commit, risking silent event loss (dual-write failure, NOT an Outbox pattern). Furthermore, the idempotency check used a naive check-then-act approach susceptible to TOCTOU race conditions, returning HTTP 500 on concurrent requests instead of returning cached responses. Finally, business failures (no seats) incorrectly returned HTTP 201.
 - **How the team detected it:** A secondary, deeper independent review exposed the severe flaws and the architectural misunderstanding of the initial review.
 - **Correction:** The agent recognized the mistake, abandoned the superficial approach, and planned fixes to implement a proper Outbox/event failure handling, an insert-first idempotency strategy, and correct HTTP semantics.
+
+## Case 11: Racy Idempotency Check (TOCTOU) and Dual-Write Vulnerability
+
+- **Date:** 2026-07-09
+- **Owner:** Person 3 (Inventory)
+- **Prompt/task:** Implement reservation logic with idempotency and Kafka event publishing.
+- **Agent output:** An implementation that checked the idempotency table before executing the business logic (check-then-act) and published events to Kafka directly after the DB transaction committed.
+- **Why it was wrong:** The check-then-act approach suffers from a Time-Of-Check to Time-Of-Use (TOCTOU) vulnerability where concurrent identical requests could both see `null` and crash with a `DuplicateKeyException` (500 Server Error). Furthermore, publishing to Kafka outside the DB transaction created a dual-write vulnerability where the DB could commit but the Kafka publish could fail, leaving the system in an inconsistent state. The `generateFingerprint` also didn't sort the seats list, producing false 409 conflicts.
+- **How the team caught it:** Code review flagged the TOCTOU idempotency flow, the false conflicts on arrays, and the risky dual-write pattern, mandating the Outbox pattern.
+- **Correction:** Refactored the idempotency logic to use an "insert-first" (catch `DuplicateKeyException`) fallback to safely handle concurrency. Replaced direct Kafka publishing with the Transactional Outbox pattern, inserting events into an `outbox_events` table within the same R2DBC transaction to be processed by Debezium. Also updated the controller to return a `422 Unprocessable Entity` instead of `201 Created` for failed reservations due to oversell, and sorted the seats array before hashing.
+
