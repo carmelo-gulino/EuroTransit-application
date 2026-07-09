@@ -6,12 +6,9 @@ import it.polito.cpo.contracts.inventory.ReservationStatus
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
-import java.time.LocalDateTime
-import java.util.UUID
 
 import it.polito.cpo.service.ReservationService
 
-import org.springframework.security.oauth2.jwt.Jwt
 
 @RestController
 @RequestMapping("/api/inventory/reservations")

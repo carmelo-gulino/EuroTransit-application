@@ -11,6 +11,7 @@ dependencies {
     runtimeOnly("org.postgresql:r2dbc-postgresql")
     
     // Flyway and JDBC driver for startup migrations
+    implementation("org.springframework.boot:spring-boot-flyway")
     implementation("org.flywaydb:flyway-core")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
