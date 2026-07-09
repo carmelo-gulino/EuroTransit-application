@@ -120,3 +120,15 @@ jobs:
               --image=curlimages/curl:8.16.0 \
               --command -- curl --fail --silent --show-error "http://${service}:8080/actuator/health"
           done
+
+      - name: Dump smoke diagnostics on failure
+        if: failure()
+        run: |
+          if ! command -v kubectl >/dev/null 2>&1; then
+            echo "kubectl is not available; skipping smoke cluster diagnostics."
+            exit 0
+          fi
+          kubectl get pods -n eurotransit-smoke -o wide || true
+          kubectl get events -n eurotransit-smoke --sort-by=.lastTimestamp || true
+          kubectl describe deployments,pods -n eurotransit-smoke || true
+          kubectl logs -n eurotransit-smoke -l app.kubernetes.io/part-of=eurotransit --all-containers --tail=200 || true
