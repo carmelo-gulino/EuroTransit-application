@@ -19,7 +19,7 @@ docker compose up -d
 
 ## Configuring the Transactional Outbox Pattern (Debezium)
 
-EuroTransit relies on the Transactional Outbox Pattern to guarantee exactly-once message delivery without distributed transactions. Locally, we use Debezium running in Kafka Connect to read the `outbox_events` table and forward events to Kafka.
+EuroTransit relies on the Transactional Outbox Pattern to provide a durable outbox / at-least-once delivery without distributed transactions. Locally, we use Debezium running in Kafka Connect to read the `outbox_events` table and forward events to Kafka.
 
 After starting the `docker-compose.yml` stack, Debezium must be explicitly configured to monitor the Inventory service outbox.
 

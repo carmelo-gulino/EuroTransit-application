@@ -75,9 +75,11 @@ services:
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
       MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
-      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/eurotransit
-      SPRING_R2DBC_USERNAME: eurotransit
-      SPRING_R2DBC_PASSWORD: password
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: eurotransit
+      DB_USER: eurotransit
+      DB_PASSWORD: password
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
     expose:
