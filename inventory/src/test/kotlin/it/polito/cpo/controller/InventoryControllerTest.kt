@@ -152,7 +152,7 @@ class InventoryControllerTest {
     }
 
     @Test
-    fun `createReservation returns 422 Unprocessable Entity if reservation fails due to oversell`() {
+    fun `createReservation returns 409 Conflict if reservation fails due to oversell`() {
         val request = ReservationRequest(UUID.randomUUID(), listOf("1A", "1B"), "route-1")
         val idempotencyKey = "test-idem-key"
         val correlationId = "test-corr-id"
@@ -173,7 +173,7 @@ class InventoryControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
             .exchange()
-            .expectStatus().isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY)
+            .expectStatus().isEqualTo(HttpStatus.CONFLICT)
             .expectBody()
             .jsonPath("$.reservationId").isEqualTo("res-123")
             .jsonPath("$.status").isEqualTo("FAILED")

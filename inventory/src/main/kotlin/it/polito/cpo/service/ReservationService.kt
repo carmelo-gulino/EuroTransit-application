@@ -98,7 +98,7 @@ class ReservationService(
                     principalId = principalId,
                     operation = "RESERVE",
                     requestFingerprint = fingerprint,
-                    responseStatusCode = if (success) 201 else 422,
+                    responseStatusCode = if (success) 201 else 409,
                     responseBody = objectMapper.writeValueAsString(storedResponse)
                 )
                 idempotencyRecordRepository.save(idempotencyRecord)
