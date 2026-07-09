@@ -110,31 +110,6 @@ class PaymentControllerTest @Autowired constructor(
     }
 
     @Test
-    fun `capture returns 200 OK on success`() {
-        val request = it.polito.cpo.contracts.payments.PaymentCaptureRequest(
-            orderId = UUID.randomUUID(),
-            amount = BigDecimal.TEN
-        )
-        
-        paymentService.nextResponse = PaymentResponse(
-            status = PaymentStatus.AUTHORIZED,
-            providerReference = "ch_123"
-        )
-
-        webTestClient.post()
-            .uri("/api/payments/capture")
-            .header("Idempotency-Key", "idem-capture")
-            .headers { it.setBearerAuth("service-token") }
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(request)
-            .exchange()
-            .expectStatus().isOk
-            .expectBody()
-            .jsonPath("$.status").isEqualTo("AUTHORIZED")
-            .jsonPath("$.providerReference").isEqualTo("ch_123")
-    }
-
-    @Test
     fun `refund returns 200 OK on success`() {
         val request = it.polito.cpo.payments.dto.PaymentRefundRequest(
             orderId = "order-123",
@@ -167,7 +142,6 @@ class FakeIPaymentService : IPaymentService {
     
     override suspend fun authorize(orderId: String, principalId: String, amount: BigDecimal, currency: String, paymentMethodToken: String, idempotencyKey: String) = nextResponse
     override suspend fun refund(orderId: String, amount: BigDecimal?, idempotencyKey: String) = nextRefundResponse
-    override suspend fun capture(orderId: String, amount: BigDecimal, idempotencyKey: String) = nextResponse
 }
 
 @TestConfiguration

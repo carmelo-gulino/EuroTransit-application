@@ -23,10 +23,4 @@ interface IPaymentService {
         amount: BigDecimal?,
         idempotencyKey: String
     ): PaymentRefundResponse
-
-    suspend fun capture(
-        orderId: String,
-        amount: BigDecimal,
-        idempotencyKey: String
-    ): PaymentResponse
 }

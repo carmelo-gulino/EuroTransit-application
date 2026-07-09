@@ -48,7 +48,7 @@ class StripeSandboxProvider(
         formData.add("amount", amount.multiply(BigDecimal(100)).toLong().toString())
         formData.add("currency", currency.lowercase())
         formData.add("source", paymentMethodToken)
-        formData.add("capture", "false") // HOLD instead of capture
+        // capture defaults to true: authorize and charge in one call
 
         return try {
             val response = webClient.post()
@@ -64,10 +64,12 @@ class StripeSandboxProvider(
                 providerReference = response.id
             )
         } catch (e: WebClientResponseException) {
-            log.warn("Stripe API returned error: ${e.statusCode} - ${e.responseBodyAsString}")
+            // Never log the raw provider response body: it may carry payment/card data (api-design.md
+            // forbids raw payment data / card details in logs). Log only the whitelisted error code.
+            val errorBody = try { e.getResponseBodyAs(StripeErrorResponse::class.java) } catch (_: Exception) { null }
+            log.warn("Stripe API returned error: status={} code={}", e.statusCode, errorBody?.error?.code ?: "unknown")
             if (e.statusCode.value() == 402) {
                 // HTTP 402 Payment Required is used by Stripe for card errors (e.g. insufficient funds)
-                val errorBody = e.getResponseBodyAs(StripeErrorResponse::class.java)
                 ProviderAuthorizationResult(
                     success = false,
                     providerReference = null,
@@ -82,46 +84,7 @@ class StripeSandboxProvider(
             throw e
         }
     }
-    
-    override suspend fun capture(
-        providerReference: String,
-        amount: BigDecimal?,
-        idempotencyKey: String
-    ): ProviderAuthorizationResult {
-        log.info("Sending capture request to Stripe Sandbox for charge $providerReference")
-        
-        val formData = LinkedMultiValueMap<String, String>()
-        if (amount != null) {
-            formData.add("amount", amount.multiply(BigDecimal(100)).toLong().toString())
-        }
 
-        return try {
-            val response = webClient.post()
-                .uri("/charges/$providerReference/capture")
-                .header("Idempotency-Key", "stripe_cap_$idempotencyKey")
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(BodyInserters.fromFormData(formData))
-                .retrieve()
-                .awaitBody<StripeChargeResponse>()
-
-            ProviderAuthorizationResult(
-                success = true,
-                providerReference = response.id
-            )
-        } catch (e: WebClientResponseException) {
-            log.warn("Stripe API returned error on capture: ${e.statusCode} - ${e.responseBodyAsString}")
-            val errorBody = try { e.getResponseBodyAs(StripeErrorResponse::class.java) } catch (_: Exception) { null }
-            ProviderAuthorizationResult(
-                success = false,
-                providerReference = null,
-                errorCode = errorBody?.error?.code ?: "capture_failed"
-            )
-        } catch (e: Exception) {
-            log.error("Network error communicating with Stripe for capture", e)
-            throw e
-        }
-    }
-    
     override suspend fun refund(
         providerReference: String,
         amount: BigDecimal?,
@@ -149,8 +112,9 @@ class StripeSandboxProvider(
                 refundReference = response.id
             )
         } catch (e: WebClientResponseException) {
-            log.warn("Stripe API returned error on refund: ${e.statusCode} - ${e.responseBodyAsString}")
+            // Never log the raw provider response body: it may carry payment/card data. Log only the whitelisted error code.
             val errorBody = try { e.getResponseBodyAs(StripeErrorResponse::class.java) } catch (_: Exception) { null }
+            log.warn("Stripe API returned error on refund: status={} code={}", e.statusCode, errorBody?.error?.code ?: "unknown")
             ProviderRefundResult(
                 success = false,
                 refundReference = null,

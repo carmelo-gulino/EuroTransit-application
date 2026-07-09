@@ -61,26 +61,4 @@ class PaymentController(
             IPaymentService.RefundStatus.DEPENDENCY_FAILED -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(result)
         }
     }
-
-    @PostMapping("/capture")
-    suspend fun capturePayment(
-        @RequestHeader("Idempotency-Key") idempotencyKey: String,
-        @RequestHeader("Authorization", required = false) authorizationHeader: String?,
-        @RequestBody request: it.polito.cpo.contracts.payments.PaymentCaptureRequest
-    ): ResponseEntity<PaymentResponse> {
-        
-        val response = paymentService.capture(
-            orderId = request.orderId.toString(),
-            amount = request.amount,
-            idempotencyKey = idempotencyKey
-        )
-
-        val httpStatus = when (response.status) {
-            PaymentStatus.AUTHORIZED -> HttpStatus.OK
-            PaymentStatus.DECLINED -> HttpStatus.UNPROCESSABLE_ENTITY
-            PaymentStatus.CONFLICT -> HttpStatus.CONFLICT
-            PaymentStatus.DEPENDENCY_FAILED -> HttpStatus.SERVICE_UNAVAILABLE
-        }
-        return ResponseEntity.status(httpStatus).body(response)
-    }
 }

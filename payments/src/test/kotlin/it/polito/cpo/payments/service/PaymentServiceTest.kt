@@ -17,6 +17,10 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.transaction.ReactiveTransaction
+import org.springframework.transaction.ReactiveTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import reactor.core.publisher.Mono
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.UUID
@@ -42,7 +46,8 @@ class PaymentServiceTest {
         paymentAuthorizationRepository as PaymentAuthorizationRepository,
         paymentRefundRepository as PaymentRefundRepository,
         kafkaTemplate,
-        objectMapper
+        objectMapper,
+        NoopReactiveTransactionManager()
     )
 
     private fun mockKafkaTemplate(): KafkaTemplate<String, Any> {
@@ -55,24 +60,6 @@ class PaymentServiceTest {
         assertEquals(PaymentStatus.AUTHORIZED, response.status)
         assertEquals("ch_123", response.providerReference)
         assertEquals(1, paymentAuthorizationRepository.saved.size)
-        assertEquals(1, idempotencyRepository.saved.size)
-    }
-
-    @Test
-    fun `capture - successful payment capture`() = runTest {
-        val auth = PaymentAuthorization(
-            orderId = "order-123",
-            principalId = "user1",
-            amount = BigDecimal.TEN,
-            currency = "EUR",
-            status = PaymentAuthorization.STATUS_AUTHORIZED,
-            providerReference = "ch_123",
-            idempotencyKey = "key-123"
-        )
-        paymentAuthorizationRepository.saved.add(auth)
-
-        val response = paymentService.capture("order-123", BigDecimal.TEN, "key-capture-123")
-        assertEquals(PaymentStatus.AUTHORIZED, response.status)
         assertEquals(1, idempotencyRepository.saved.size)
     }
 
@@ -129,13 +116,58 @@ class PaymentServiceTest {
         assertEquals(PaymentStatus.CONFLICT, response.status)
     }
 
+    @Test
+    fun `authorize - rejects zero or negative amount without calling the provider`() = runTest {
+        val zero = paymentService.authorize("order-123", "user1", BigDecimal.ZERO, "EUR", "tok_123", "key-zero")
+        assertEquals(PaymentStatus.DECLINED, zero.status)
+        assertEquals("INVALID_AMOUNT", zero.errorCode)
+
+        val negative = paymentService.authorize("order-123", "user1", BigDecimal("-10"), "EUR", "tok_123", "key-neg")
+        assertEquals(PaymentStatus.DECLINED, negative.status)
+        assertEquals("INVALID_AMOUNT", negative.errorCode)
+
+        assertEquals(0, paymentAuthorizationRepository.saved.size)
+        assertEquals(0, idempotencyRepository.saved.size)
+    }
+
+    @Test
+    fun `authorize - rejects malformed currency without calling the provider`() = runTest {
+        val response = paymentService.authorize("order-123", "user1", BigDecimal.TEN, "euros", "tok_123", "key-badcur")
+        assertEquals(PaymentStatus.DECLINED, response.status)
+        assertEquals("INVALID_CURRENCY", response.errorCode)
+        assertEquals(0, paymentAuthorizationRepository.saved.size)
+    }
+
+    @Test
+    fun `refund - rejects zero or negative amount without calling the provider`() = runTest {
+        val response = paymentService.refund("order-123", BigDecimal.ZERO, "key-refund-zero")
+        assertEquals(IPaymentService.RefundStatus.FAILED, response.status)
+        assertEquals("INVALID_AMOUNT", response.errorCode)
+        assertEquals(0, paymentRefundRepository.saved.size)
+    }
+
+    @Test
+    fun `refund - null amount (full refund) is still accepted`() = runTest {
+        val auth = PaymentAuthorization(
+            orderId = "order-123",
+            principalId = "user1",
+            amount = BigDecimal.TEN,
+            currency = "EUR",
+            status = PaymentAuthorization.STATUS_AUTHORIZED,
+            providerReference = "ch_123",
+            idempotencyKey = "key-123"
+        )
+        paymentAuthorizationRepository.saved.add(auth)
+
+        val response = paymentService.refund("order-123", null, "key-refund-full")
+        assertEquals(IPaymentService.RefundStatus.REFUNDED, response.status)
+    }
+
     class FakePaymentProvider : IPaymentProvider {
         override suspend fun authorize(amount: BigDecimal, currency: String, token: String, idempotencyKey: String) =
             ProviderAuthorizationResult(true, "ch_123", null)
         override suspend fun refund(ref: String, amount: BigDecimal?, idempotencyKey: String) =
             ProviderRefundResult(true, "re_123", null)
-        override suspend fun capture(ref: String, amount: BigDecimal?, idempotencyKey: String) =
-            ProviderAuthorizationResult(true, "ch_123", null)
     }
 
     // A minimal proxy that implements the Spring Data repository interface by throwing exceptions 
@@ -155,5 +187,19 @@ class PaymentServiceTest {
     open class FakePaymentRefundRepository : PaymentRefundRepository by org.mockito.Mockito.mock(PaymentRefundRepository::class.java) {
         val saved = mutableListOf<PaymentRefund>()
         override suspend fun <S : PaymentRefund> save(entity: S): S { saved.add(entity); return entity }
+    }
+
+    // Runs the transactional block without a real DB transaction, since these are in-memory fakes.
+    class NoopReactiveTransactionManager : ReactiveTransactionManager {
+        private val transaction = object : ReactiveTransaction {
+            override fun isNewTransaction(): Boolean = true
+            override fun setRollbackOnly() {}
+            override fun isRollbackOnly(): Boolean = false
+            override fun isCompleted(): Boolean = false
+        }
+
+        override fun getReactiveTransaction(definition: TransactionDefinition?): Mono<ReactiveTransaction> = Mono.just(transaction)
+        override fun commit(transaction: ReactiveTransaction): Mono<Void> = Mono.empty()
+        override fun rollback(transaction: ReactiveTransaction): Mono<Void> = Mono.empty()
     }
 }
