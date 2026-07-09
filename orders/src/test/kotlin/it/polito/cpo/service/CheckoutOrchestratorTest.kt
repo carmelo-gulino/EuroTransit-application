@@ -83,12 +83,6 @@ class CheckoutOrchestratorTest {
                 providerReference = "test-auth-id",
                 errorCode = null
             )
-        override suspend fun capturePayment(request: it.polito.cpo.contracts.payments.PaymentCaptureRequest, idempotencyKey: String, correlationId: String): PaymentResponse =
-            PaymentResponse(
-                status = status,
-                providerReference = "test-cap-id",
-                errorCode = null
-            )
     }
 
     @Suppress("UNCHECKED_CAST")

@@ -18,12 +18,4 @@ class MockPaymentClient : PaymentClient {
             errorCode = null
         )
     }
-
-    override suspend fun capturePayment(request: it.polito.cpo.contracts.payments.PaymentCaptureRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
-        return PaymentResponse(
-            status = it.polito.cpo.contracts.payments.PaymentStatus.AUTHORIZED,
-            providerReference = "mock_cap_id",
-            errorCode = null
-        )
-    }
 }

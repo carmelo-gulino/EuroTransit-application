@@ -27,15 +27,4 @@ class WebClientPaymentClient(
             .retrieve()
             .awaitBody()
     }
-
-    override suspend fun capturePayment(request: it.polito.cpo.contracts.payments.PaymentCaptureRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
-        return webClient.post()
-            .uri("/api/payments/capture")
-            .contentType(MediaType.APPLICATION_JSON)
-            .header("Idempotency-Key", idempotencyKey)
-            .header("X-Correlation-Id", correlationId)
-            .bodyValue(request)
-            .retrieve()
-            .awaitBody()
-    }
 }

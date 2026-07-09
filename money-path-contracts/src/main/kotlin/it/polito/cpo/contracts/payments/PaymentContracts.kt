@@ -20,9 +20,3 @@ data class PaymentResponse(
     val providerReference: String?,
     val errorCode: String? = null
 )
-
-// orders -> payments : POST /api/payments/capture (Idempotency-Key header)
-data class PaymentCaptureRequest(
-    val orderId: UUID,
-    val amount: BigDecimal
-)
