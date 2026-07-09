@@ -42,8 +42,8 @@ services:
       # Flyway on its localhost default and it would fail to connect. See conventions.md.
       DB_HOST: postgres
       DB_PORT: "5432"
-      DB_NAME: eurotransit
-      DB_USER: eurotransit
+      DB_NAME: orders_db
+      DB_USER: orders
       DB_PASSWORD: password
       # In-network broker (compose PLAINTEXT listener); without it the producer falls back
       # to localhost, which does not resolve inside a container.
@@ -56,8 +56,8 @@ services:
     expose:
       - "8080"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.orders.rule=PathPrefix(`/api/orders`)"
@@ -80,16 +80,16 @@ services:
       MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
       DB_HOST: postgres
       DB_PORT: "5432"
-      DB_NAME: eurotransit
-      DB_USER: eurotransit
+      DB_NAME: inventory_db
+      DB_USER: inventory
       DB_PASSWORD: password
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
     expose:
       - "8080"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
     labels:
       - "traefik.enable=false"
 
@@ -104,10 +104,18 @@ services:
       SERVER_PORT: 8080
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: payments_db
+      DB_USER: payments
+      DB_PASSWORD: password
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
     expose:
       - "8080"
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
     labels:
       - "traefik.enable=false"
 
@@ -144,16 +152,53 @@ services:
     environment:
       POSTGRES_USER: eurotransit
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: eurotransit
+      POSTGRES_DB: postgres
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eurotransit -d eurotransit"]
+      test: ["CMD-SHELL", "pg_isready -U eurotransit -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  postgres-init:
+    image: postgres:15-alpine
+    container_name: eurotransit-postgres-init
+    environment:
+      PGPASSWORD: password
+    command:
+      - sh
+      - -c
+      - |
+        psql -h postgres -U eurotransit -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+        SELECT 'CREATE USER orders WITH PASSWORD ''password'''
+        WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'orders')\gexec
+
+        SELECT 'CREATE USER inventory WITH PASSWORD ''password'' REPLICATION'
+        WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'inventory')\gexec
+
+        SELECT 'CREATE USER payments WITH PASSWORD ''password'''
+        WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'payments')\gexec
+
+        SELECT 'CREATE DATABASE orders_db OWNER orders'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'orders_db')\gexec
+
+        SELECT 'CREATE DATABASE inventory_db OWNER inventory'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'inventory_db')\gexec
+
+        SELECT 'CREATE DATABASE payments_db OWNER payments'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'payments_db')\gexec
+
+        GRANT ALL PRIVILEGES ON DATABASE orders_db TO orders;
+        GRANT ALL PRIVILEGES ON DATABASE inventory_db TO inventory;
+        GRANT ALL PRIVILEGES ON DATABASE payments_db TO payments;
+        ALTER USER inventory WITH REPLICATION;
+        SQL
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   kafka:
     image: apache/kafka:latest
