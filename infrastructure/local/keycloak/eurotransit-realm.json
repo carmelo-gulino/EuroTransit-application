@@ -39,6 +39,9 @@
     {
       "username": "alice",
       "enabled": true,
+      "email": "alice@eurotransit.local",
+      "firstName": "Alice",
+      "lastName": "Customer",
       "emailVerified": true,
       "requiredActions": [],
       "credentials": [
@@ -53,6 +56,9 @@
     {
       "username": "admin",
       "enabled": true,
+      "email": "admin@eurotransit.local",
+      "firstName": "Admin",
+      "lastName": "Operations",
       "emailVerified": true,
       "requiredActions": [],
       "credentials": [
