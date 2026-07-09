@@ -11,7 +11,6 @@ import java.util.UUID
 
 import it.polito.cpo.service.ReservationService
 
-import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 
 @RestController
@@ -24,10 +23,10 @@ class InventoryController(
     suspend fun createReservation(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
         @RequestHeader("X-Correlation-Id") correlationId: String,
-        @AuthenticationPrincipal jwt: Jwt,
+        @RequestHeader("X-User-Id") userId: String,
         @RequestBody request: ReservationRequest
     ): ResponseEntity<ReservationResponse> {
-        val response = reservationService.reserveSeats(idempotencyKey, jwt.subject, correlationId, request)
+        val response = reservationService.reserveSeats(idempotencyKey, userId, correlationId, request)
         val httpStatus = if (response.status == ReservationStatus.FAILED) HttpStatus.CONFLICT else HttpStatus.CREATED
         return ResponseEntity.status(httpStatus).body(response)
     }

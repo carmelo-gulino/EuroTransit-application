@@ -136,6 +136,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             .header("Idempotency-Key", idempotencyKey)
             .header("X-Correlation-Id", correlationId)
+            .header("X-User-Id", userId)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
             .exchange()
@@ -170,6 +171,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             .header("Idempotency-Key", idempotencyKey)
             .header("X-Correlation-Id", correlationId)
+            .header("X-User-Id", userId)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
             .exchange()
@@ -196,6 +198,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             // missing Idempotency-Key
             .header("X-Correlation-Id", "test-corr-id")
+            .header("X-User-Id", userId)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
 
@@ -218,6 +221,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             .header("Idempotency-Key", "test-idem-key")
             // missing X-Correlation-Id
+            .header("X-User-Id", userId)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
 
@@ -233,6 +237,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             .header("Idempotency-Key", "test-idem-key")
             .header("X-Correlation-Id", "test-corr-id")
+            .header("X-User-Id", "user-123")
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
             .exchange()
@@ -254,6 +259,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             .header("Idempotency-Key", "test-idem-key")
             .header("X-Correlation-Id", "test-corr-id")
+            .header("X-User-Id", userId)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
             .exchange()
@@ -277,6 +283,7 @@ class InventoryControllerTest {
             .uri("/api/inventory/reservations")
             .header("Idempotency-Key", "test-idem-key")
             .header("X-Correlation-Id", "test-corr-id")
+            .header("X-User-Id", userId)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
 
