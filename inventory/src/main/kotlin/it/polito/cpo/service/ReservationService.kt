@@ -1,5 +1,6 @@
 package it.polito.cpo.service
 
+import io.r2dbc.postgresql.codec.Json
 import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.contracts.events.InventoryFailedEvent
 import it.polito.cpo.contracts.events.InventoryFailedPayload
@@ -99,7 +100,7 @@ class ReservationService(
                     operation = "RESERVE",
                     requestFingerprint = fingerprint,
                     responseStatusCode = if (success) 201 else 409,
-                    responseBody = objectMapper.writeValueAsString(storedResponse)
+                    responseBody = Json.of(objectMapper.writeValueAsString(storedResponse))
                 )
                 idempotencyRecordRepository.save(idempotencyRecord)
 
@@ -120,7 +121,7 @@ class ReservationService(
                         aggregateType = "Inventory",
                         aggregateId = request.orderId.toString(),
                         type = "inventory-reserved",
-                        payload = objectMapper.writeValueAsString(event)
+                        payload = Json.of(objectMapper.writeValueAsString(event))
                     )
                     outboxEventRepository.save(outboxEvent)
                 } else {
@@ -137,7 +138,7 @@ class ReservationService(
                         aggregateType = "Inventory",
                         aggregateId = request.orderId.toString(),
                         type = "inventory-failed",
-                        payload = objectMapper.writeValueAsString(event)
+                        payload = Json.of(objectMapper.writeValueAsString(event))
                     )
                     outboxEventRepository.save(outboxEvent)
                 }
@@ -151,7 +152,7 @@ class ReservationService(
                 status = finalStatus,
                 expiresAt = expiresAt.toLocalDateTime()
             )
-        } catch (e: DuplicateKeyException) {
+        } catch (_: DuplicateKeyException) {
             logger.info("Concurrent request detected for idempotency key: {}. Falling back to cached response.", idempotencyKey)
             val concurrentRecord = idempotencyRecordRepository.findByKeyAndPrincipal(idempotencyKey, principalId)
                 ?: throw ApiException(
@@ -179,7 +180,7 @@ class ReservationService(
         if (existingRecord.responseBody != null) {
             logger.info("Returning cached reservation response for idempotency key: {}", idempotencyKey)
             return objectMapper.readValue(
-                existingRecord.responseBody,
+                existingRecord.responseBody.asString(),
                 ReservationResponse::class.java
             )
         }

@@ -1,5 +1,6 @@
 package it.polito.cpo.model
 
+import io.r2dbc.postgresql.codec.Json
 import org.springframework.data.annotation.Id
 import org.springframework.data.annotation.Transient
 import org.springframework.data.domain.Persistable
@@ -11,14 +12,14 @@ data class IdempotencyRecord(
     @Id
     @get:JvmName("getIdempotencyKeyValue")
     val idempotencyKey: String,
-    
+
     val principalId: String,
     val operation: String,
     val requestFingerprint: String,
     val responseStatusCode: Int,
-    val responseBody: String?,
+    val responseBody: Json?,
     val createdAt: OffsetDateTime? = null,
-    
+
     @Transient
     var isNewRecord: Boolean = true
 ) : Persistable<String> {

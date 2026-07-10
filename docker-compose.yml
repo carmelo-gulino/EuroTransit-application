@@ -53,6 +53,9 @@ services:
       # Service-to-service: obtain the ROLE_service token from the in-network Keycloak.
       # iss is kept consistent (localhost:8081) by KC_HOSTNAME_URL on the keycloak service.
       ORDERS_SERVICE_TOKEN_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/token
+      EUROTRANSIT_SERVICES_INVENTORY_URL: http://inventory:8080
+      EUROTRANSIT_SERVICES_PAYMENTS_URL: http://payments:8080
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     expose:
       - "8080"
     depends_on:
@@ -74,6 +77,7 @@ services:
     image: eurotransit/inventory:local
     container_name: eurotransit-inventory
     environment:
+      SPRING_PROFILES_ACTIVE: local
       SERVER_PORT: 8080
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
@@ -85,6 +89,7 @@ services:
       DB_PASSWORD: password
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     expose:
       - "8080"
     depends_on:
@@ -111,6 +116,7 @@ services:
       DB_PASSWORD: password
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     expose:
       - "8080"
     depends_on:
@@ -135,6 +141,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8081/realms/eurotransit
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/eurotransit/protocol/openid-connect/certs
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://tempo:4318/v1/traces
     expose:
       - "8080"
     depends_on:
@@ -250,7 +257,7 @@ services:
       - postgres
 
   traefik:
-    image: traefik:v2.10
+    image: traefik:3.6.21
     container_name: eurotransit-traefik
     command:
       - "--api.insecure=true" # Enable dashboard on port 8080

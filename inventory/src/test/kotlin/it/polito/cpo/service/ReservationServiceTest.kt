@@ -143,7 +143,7 @@ class ReservationServiceTest {
         
         assertEquals(1, outboxRepo.store.size, "Exactly one OutboxEvent should be emitted")
 
-        val emittedEvent = mapper.readValue(outboxRepo.store.first().payload, InventoryReservedEvent::class.java)
+        val emittedEvent = mapper.readValue(outboxRepo.store.first().payload.asString(), InventoryReservedEvent::class.java)
         assertEquals(correlationId, emittedEvent.correlationId)
         assertEquals(request.orderId, emittedEvent.orderId)
         assertEquals(principalId, emittedEvent.principalId)
@@ -181,7 +181,7 @@ class ReservationServiceTest {
 
         assertEquals(1, outboxRepo.store.size, "Exactly one OutboxEvent should be emitted")
         
-        val emittedEvent = mapper.readValue(outboxRepo.store.first().payload, InventoryFailedEvent::class.java)
+        val emittedEvent = mapper.readValue(outboxRepo.store.first().payload.asString(), InventoryFailedEvent::class.java)
         assertEquals(correlationId, emittedEvent.correlationId)
         assertEquals(request.orderId, emittedEvent.orderId)
         assertEquals(principalId, emittedEvent.principalId)
@@ -216,7 +216,7 @@ class ReservationServiceTest {
             operation = "RESERVE",
             requestFingerprint = fingerprint,
             responseStatusCode = 201,
-            responseBody = mapper.writeValueAsString(cachedResponse)
+            responseBody = io.r2dbc.postgresql.codec.Json.of(mapper.writeValueAsString(cachedResponse))
         ))
 
         val response = service.reserveSeats(idempotencyKey, principalId, correlationId, request)
@@ -250,7 +250,7 @@ class ReservationServiceTest {
             operation = "RESERVE",
             requestFingerprint = "a-completely-different-hash",
             responseStatusCode = 201,
-            responseBody = "{}"
+            responseBody = io.r2dbc.postgresql.codec.Json.of("{}")
         ))
 
         val exception = assertThrows<ApiException> {
