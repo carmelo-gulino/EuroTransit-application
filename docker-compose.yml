@@ -77,6 +77,7 @@ services:
     image: eurotransit/inventory:local
     container_name: eurotransit-inventory
     environment:
+      SPRING_PROFILES_ACTIVE: local
       SERVER_PORT: 8080
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       MANAGEMENT_HEALTH_R2DBC_ENABLED: "false"
