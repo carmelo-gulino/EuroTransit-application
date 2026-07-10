@@ -1,5 +1,6 @@
 package it.polito.cpo.model
 
+import io.r2dbc.postgresql.codec.Json
 import org.springframework.data.annotation.Id
 import org.springframework.data.domain.Persistable
 import org.springframework.data.relational.core.mapping.Table
@@ -12,7 +13,7 @@ data class OutboxEvent(
     val aggregateType: String,
     val aggregateId: String,
     val type: String,
-    val payload: String,
+    val payload: Json,
     val createdAt: OffsetDateTime = OffsetDateTime.now()
 ) : Persistable<UUID> {
     override fun getId(): UUID = id
