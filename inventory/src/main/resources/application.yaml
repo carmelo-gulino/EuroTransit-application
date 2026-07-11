@@ -1,4 +1,7 @@
 spring:
+  reactor:
+    context-propagation: auto
+
   application:
     name: inventory
   security:
@@ -7,22 +10,47 @@ spring:
         jwt:
           issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8081/realms/eurotransit}
           jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://localhost:8081/realms/eurotransit/protocol/openid-connect/certs}
-  datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eurotransit}
-    username: ${DB_USER:eurotransit}
-    password: ${DB_PASSWORD:password}
-
   r2dbc:
-    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:eurotransit}
-    username: ${DB_USER:eurotransit}
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:inventory_db}
+    username: ${DB_USER:inventory}
     password: ${DB_PASSWORD:password}
   flyway:
     enabled: true
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:inventory_db}
+    user: ${DB_USER:inventory}
+    password: ${DB_PASSWORD:password}
 
 server:
   port: 8082
 
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: http://localhost:4318/v1/traces
   otlp:
     metrics:
       export:

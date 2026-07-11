@@ -5,4 +5,6 @@ import org.springframework.data.repository.kotlin.CoroutineCrudRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface ReservationRepository : CoroutineCrudRepository<Reservation, String>
+interface ReservationRepository : CoroutineCrudRepository<Reservation, String> {
+    suspend fun findByReservationId(reservationId: String): Reservation?
+}
