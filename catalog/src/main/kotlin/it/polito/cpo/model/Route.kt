@@ -1,4 +1,4 @@
-package it.polito.cpo.catalog.model
+package it.polito.cpo.model
 
 import java.time.Duration
 import java.time.LocalTime
