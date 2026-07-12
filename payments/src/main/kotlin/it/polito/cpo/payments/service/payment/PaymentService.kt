@@ -4,12 +4,21 @@ import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.payments.service.provider.IPaymentProvider
 import it.polito.cpo.contracts.payments.PaymentResponse
 import it.polito.cpo.contracts.payments.PaymentStatus
+import it.polito.cpo.contracts.events.PaymentAuthorizationEvent
+import it.polito.cpo.contracts.events.PaymentAuthorizationPayload
+import it.polito.cpo.contracts.events.PaymentRefundEvent
+import it.polito.cpo.contracts.events.PaymentRefundPayload
+import it.polito.cpo.observability.ApiException
+import it.polito.cpo.observability.CorrelationId
 import it.polito.cpo.payments.model.IdempotencyRecord
 import it.polito.cpo.payments.model.PaymentAuthorization
+import it.polito.cpo.payments.model.PaymentRefund
 import it.polito.cpo.payments.repository.IdempotencyRepository
 import it.polito.cpo.payments.repository.PaymentAuthorizationRepository
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
+import org.springframework.http.HttpStatus
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.ReactiveTransactionManager
@@ -25,7 +34,7 @@ class PaymentService(
     private val idempotencyRepository: IdempotencyRepository,
     private val paymentAuthorizationRepository: PaymentAuthorizationRepository,
     private val paymentRefundRepository: it.polito.cpo.payments.repository.PaymentRefundRepository,
-    private val kafkaTemplate: KafkaTemplate<String, Any>,
+    private val kafkaTemplate: KafkaTemplate<String, String>,
     private val objectMapper: ObjectMapper,
     transactionManager: ReactiveTransactionManager
 ) : IPaymentService {
@@ -45,12 +54,14 @@ class PaymentService(
         idempotencyKey: String
     ): PaymentResponse {
 
-        // Validate before touching the DB or the provider: a malformed amount/currency is never a valid charge.
+        // Validate before touching the DB or the provider: a malformed amount/currency is a caller
+        // (bad-request) error, NOT a payment decline — surface it as 400, not a DECLINED/422 result,
+        // so a client bug is not mistaken for a real bank decline (api-design.md error model).
         if (amount <= BigDecimal.ZERO) {
-            return PaymentResponse(PaymentStatus.DECLINED, null, "INVALID_AMOUNT")
+            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_AMOUNT", "Amount must be strictly positive")
         }
         if (!ISO_CURRENCY_PATTERN.matches(currency)) {
-            return PaymentResponse(PaymentStatus.DECLINED, null, "INVALID_CURRENCY")
+            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURRENCY", "Currency must be a 3-letter ISO 4217 code")
         }
 
         val fingerprint = "$orderId-$amount-$currency-$paymentMethodToken"
@@ -96,15 +107,17 @@ class PaymentService(
             createdAt = LocalDateTime.now()
         ).apply { setAsNew(true) }
 
-        // 3+4. Persist authorization and idempotency record atomically, in a short transaction
+        // 3+4. Persist idempotency record and authorization atomically, in a short transaction.
+        // Order matters: payment_authorizations.idempotency_key has a FK to
+        // idempotency_records(idempotency_key), so the idempotency record must be inserted first.
         txOperator.executeAndAwait {
-            paymentAuthorizationRepository.save(authorization)
             idempotencyRepository.save(idempotencyRecord)
+            paymentAuthorizationRepository.save(authorization)
         }
 
         // 5. Emit event
         val eventType = if (result.success) "payment-authorized" else "payment-declined"
-        publishEvent(eventType, orderId, principalId, authorization)
+        publishAuthorizationEvent(eventType, orderId, principalId, authorization)
 
         return response
     }
@@ -115,9 +128,10 @@ class PaymentService(
         idempotencyKey: String
     ): it.polito.cpo.payments.dto.PaymentRefundResponse {
 
-        // null amount means full refund; an explicit amount must be strictly positive.
+        // null amount means full refund; an explicit amount must be strictly positive. A malformed
+        // amount is a caller (bad-request) error, not a business refund failure → surface it as 400.
         if (amount != null && amount <= BigDecimal.ZERO) {
-            return it.polito.cpo.payments.dto.PaymentRefundResponse(IPaymentService.RefundStatus.FAILED, null, "INVALID_AMOUNT")
+            throw ApiException(HttpStatus.BAD_REQUEST, "INVALID_AMOUNT", "Refund amount must be strictly positive when provided")
         }
 
         val fingerprint = "refund-$orderId-$amount"
@@ -170,31 +184,64 @@ class PaymentService(
             createdAt = LocalDateTime.now()
         ).apply { setAsNew(true) }
 
-        // 4+5. Persist refund record and idempotency record atomically, in a short transaction
+        // 4+5. Persist idempotency record and refund atomically, in a short transaction.
+        // Order matters: payment_refunds.idempotency_key has a FK to
+        // idempotency_records(idempotency_key), so the idempotency record must be inserted first.
         txOperator.executeAndAwait {
-            paymentRefundRepository.save(paymentRefund)
             idempotencyRepository.save(idempotencyRecord)
+            paymentRefundRepository.save(paymentRefund)
         }
 
         // 6. Emit event
         val eventType = if (result.success) "payment-refunded" else "payment-refund-failed"
-        publishEvent(eventType, orderId, authorization.principalId, paymentRefund)
+        publishRefundEvent(eventType, orderId, authorization.principalId, paymentRefund)
 
         return response
     }
 
-    private fun publishEvent(eventType: String, orderId: String, principalId: String, payload: Any) {
-        val event = mapOf(
-            "eventId" to java.util.UUID.randomUUID().toString(),
-            "eventType" to eventType,
-            "schemaVersion" to 1,
-            "occurredAt" to LocalDateTime.now().toString(),
-            "correlationId" to (org.slf4j.MDC.get("correlationId") ?: ""),
-            "orderId" to orderId,
-            "principalId" to principalId,
-            "payload" to payload
+    // Events are typed contracts (money-path-contracts) pre-serialized to a JSON String with the app's
+    // Jackson 3 ObjectMapper, then sent through the StringSerializer producer — symmetric with the
+    // String-based consumers (orders/notifications) and aligned with ADR-010 (shared envelope, no drift).
+    private fun publishAuthorizationEvent(
+        eventType: String,
+        orderId: String,
+        principalId: String,
+        authorization: PaymentAuthorization
+    ) {
+        val event = PaymentAuthorizationEvent(
+            eventType = eventType,
+            correlationId = MDC.get(CorrelationId.CONTEXT_KEY) ?: "",
+            orderId = orderId,
+            principalId = principalId,
+            payload = PaymentAuthorizationPayload(
+                status = authorization.status,
+                providerReference = authorization.providerReference,
+                amount = authorization.amount,
+                currency = authorization.currency,
+                errorCode = authorization.errorCode
+            )
         )
+        kafkaTemplate.send(eventType, orderId, objectMapper.writeValueAsString(event))
+    }
 
+    private fun publishRefundEvent(
+        eventType: String,
+        orderId: String,
+        principalId: String,
+        refund: PaymentRefund
+    ) {
+        val event = PaymentRefundEvent(
+            eventType = eventType,
+            correlationId = MDC.get(CorrelationId.CONTEXT_KEY) ?: "",
+            orderId = orderId,
+            principalId = principalId,
+            payload = PaymentRefundPayload(
+                status = refund.status,
+                refundReference = refund.providerReference,
+                amount = refund.amount,
+                currency = refund.currency
+            )
+        )
         kafkaTemplate.send(eventType, orderId, objectMapper.writeValueAsString(event))
     }
 }

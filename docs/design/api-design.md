@@ -132,6 +132,11 @@ Orders, Inventory, and Payments use separate logical PostgreSQL databases with s
   - Stores payment authorization idempotency records for 24 hours.
   - Calls a configured provider sandbox/test API through a Payments-owned adapter; raw card data and live charges are out of scope.
   - Accepts only payment method tokens or provider references, never raw card number, CVV, or live payment credentials.
+- `POST /api/payments/refund`
+  - Refunds a previously authorized payment for one order, full or partial.
+  - Internal API; callers must be trusted services such as Orders (compensation when an order is cancelled or fails after authorization).
+  - Requires an Orders-generated idempotency key so retries return the original refund result instead of refunding again.
+  - Calls the provider sandbox/test refund API through the Payments-owned adapter.
 
 ### Notifications
 
@@ -170,6 +175,8 @@ Consumers must be idempotent because Kafka delivery is treated as at-least-once.
 | `inventory-failed` | Inventory | Orders | Indicates that the hold failed and the order must not proceed to payment. |
 | `payment-authorized` | Payments | Orders | Indicates payment authorization succeeded. |
 | `payment-declined` | Payments | Orders | Indicates payment failed and compensation may be needed. |
+| `payment-refunded` | Payments | Orders | Indicates a refund succeeded (compensation completed after a prior authorization). |
+| `payment-refund-failed` | Payments | Orders | Indicates a refund attempt failed and may need manual reconciliation. |
 | `order-confirmed` | Orders | Notifications, observability consumers | Indicates the order is complete and customer notification can be sent. |
 | `notification-requested` | Orders | Notifications | Optional explicit notification command if separated from `order-confirmed`. |
 
