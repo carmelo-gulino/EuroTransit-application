@@ -13,9 +13,12 @@ import it.polito.cpo.payments.service.payment.PaymentService
 import it.polito.cpo.payments.service.provider.IPaymentProvider
 import it.polito.cpo.payments.service.provider.ProviderAuthorizationResult
 import it.polito.cpo.payments.service.provider.ProviderRefundResult
+import it.polito.cpo.observability.ApiException
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.transaction.ReactiveTransaction
 import org.springframework.transaction.ReactiveTransactionManager
@@ -52,8 +55,8 @@ class PaymentServiceTest {
         NoopReactiveTransactionManager()
     )
 
-    private fun mockKafkaTemplate(): KafkaTemplate<String, Any> {
-        return org.mockito.Mockito.mock(KafkaTemplate::class.java) as KafkaTemplate<String, Any>
+    private fun mockKafkaTemplate(): KafkaTemplate<String, String> {
+        return org.mockito.Mockito.mock(KafkaTemplate::class.java) as KafkaTemplate<String, String>
     }
 
     @Test
@@ -119,32 +122,40 @@ class PaymentServiceTest {
     }
 
     @Test
-    fun `authorize - rejects zero or negative amount without calling the provider`() = runTest {
-        val zero = paymentService.authorize("order-123", "user1", BigDecimal.ZERO, "EUR", "tok_123", "key-zero")
-        assertEquals(PaymentStatus.DECLINED, zero.status)
-        assertEquals("INVALID_AMOUNT", zero.errorCode)
+    fun `authorize - rejects zero or negative amount as a 400, without calling the provider`() = runTest {
+        val zero = assertThrows<ApiException> {
+            paymentService.authorize("order-123", "user1", BigDecimal.ZERO, "EUR", "tok_123", "key-zero")
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, zero.status)
+        assertEquals("INVALID_AMOUNT", zero.code)
 
-        val negative = paymentService.authorize("order-123", "user1", BigDecimal("-10"), "EUR", "tok_123", "key-neg")
-        assertEquals(PaymentStatus.DECLINED, negative.status)
-        assertEquals("INVALID_AMOUNT", negative.errorCode)
+        val negative = assertThrows<ApiException> {
+            paymentService.authorize("order-123", "user1", BigDecimal("-10"), "EUR", "tok_123", "key-neg")
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, negative.status)
+        assertEquals("INVALID_AMOUNT", negative.code)
 
         assertEquals(0, paymentAuthorizationRepository.saved.size)
         assertEquals(0, idempotencyRepository.saved.size)
     }
 
     @Test
-    fun `authorize - rejects malformed currency without calling the provider`() = runTest {
-        val response = paymentService.authorize("order-123", "user1", BigDecimal.TEN, "euros", "tok_123", "key-badcur")
-        assertEquals(PaymentStatus.DECLINED, response.status)
-        assertEquals("INVALID_CURRENCY", response.errorCode)
+    fun `authorize - rejects malformed currency as a 400, without calling the provider`() = runTest {
+        val ex = assertThrows<ApiException> {
+            paymentService.authorize("order-123", "user1", BigDecimal.TEN, "euros", "tok_123", "key-badcur")
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertEquals("INVALID_CURRENCY", ex.code)
         assertEquals(0, paymentAuthorizationRepository.saved.size)
     }
 
     @Test
-    fun `refund - rejects zero or negative amount without calling the provider`() = runTest {
-        val response = paymentService.refund("order-123", BigDecimal.ZERO, "key-refund-zero")
-        assertEquals(IPaymentService.RefundStatus.FAILED, response.status)
-        assertEquals("INVALID_AMOUNT", response.errorCode)
+    fun `refund - rejects zero or negative amount as a 400, without calling the provider`() = runTest {
+        val ex = assertThrows<ApiException> {
+            paymentService.refund("order-123", BigDecimal.ZERO, "key-refund-zero")
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertEquals("INVALID_AMOUNT", ex.code)
         assertEquals(0, paymentRefundRepository.saved.size)
     }
 
@@ -166,10 +177,10 @@ class PaymentServiceTest {
     }
 
     @Test
-    fun `publishEvent - serializes payload with java-time fields to a JSON string via the real ObjectMapper`() = runTest {
+    fun `publishEvent - serializes the typed event with java-time fields to a JSON string via the real ObjectMapper`() = runTest {
         // Regression test for the original review concern: the Kafka value serializer is a plain
-        // StringSerializer, so the event must be pre-serialized to JSON; and PaymentAuthorization
-        // carries LocalDateTime fields, which must round-trip through the real (non-mocked) ObjectMapper.
+        // StringSerializer, so the event must be pre-serialized to JSON; and the typed event envelope
+        // carries an occurredAt LocalDateTime, which must round-trip through the real (non-mocked) ObjectMapper.
         val realObjectMapper = JsonMapper.builder().addModule(kotlinModule()).build()
         val localKafkaTemplate = mockKafkaTemplate()
         val service = PaymentService(
@@ -193,7 +204,12 @@ class PaymentServiceTest {
 
         val parsed = realObjectMapper.readTree(captor.value)
         assertEquals("payment-authorized", parsed.get("eventType").asText())
-        org.junit.jupiter.api.Assertions.assertTrue(parsed.get("payload").has("createdAt"))
+        assertEquals("order-json", parsed.get("orderId").asText())
+        // occurredAt is a LocalDateTime serialized by the real Jackson 3 mapper (ISO-8601, no crash).
+        org.junit.jupiter.api.Assertions.assertTrue(parsed.hasNonNull("occurredAt"))
+        // typed payload fields are present and nested under `payload`.
+        org.junit.jupiter.api.Assertions.assertTrue(parsed.get("payload").has("amount"))
+        assertEquals("AUTHORIZED", parsed.get("payload").get("status").asText())
     }
 
     class FakePaymentProvider : IPaymentProvider {
