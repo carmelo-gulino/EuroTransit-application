@@ -16,7 +16,10 @@ class Order(
     val routeId: String,
     val seats: String, // comma-separated seats
     val totalAmount: BigDecimal,
-    val createdAt: LocalDateTime
+    val createdAt: LocalDateTime,
+    // Sandbox payment reference kept only until the order reaches a terminal state, so the
+    // asynchronous pipeline can reconstruct the payment request. Cleared on CONFIRMED/FAILED.
+    var paymentMethodToken: String? = null
 ) : Persistable<UUID> {
 
     @Transient

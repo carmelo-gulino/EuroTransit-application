@@ -1,0 +1,385 @@
+name: CI - Conditionally Build & Push Docker Images & Update Configuration repo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      build_all:
+        description: "Force all service builds"
+        type: boolean
+        default: true
+      build_catalog:
+        description: "Force catalog build"
+        type: boolean
+        default: false
+      build_orders:
+        description: "Force orders build"
+        type: boolean
+        default: false
+      build_inventory:
+        description: "Force inventory build"
+        type: boolean
+        default: false
+      build_payments:
+        description: "Force payments build"
+        type: boolean
+        default: false
+      build_notifications:
+        description: "Force notifications build"
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: eurotransitregistry.azurecr.io
+  IMAGE_NAMESPACE: eurotransit
+  GITOPS_VALUES_FILE: charts/eurotransit/values.yaml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      catalog: ${{ steps.filter.outputs.catalog }}
+      orders: ${{ steps.filter.outputs.orders }}
+      inventory: ${{ steps.filter.outputs.inventory }}
+      payments: ${{ steps.filter.outputs.payments }}
+      notifications: ${{ steps.filter.outputs.notifications }}
+      shared: ${{ steps.filter.outputs.shared }}
+      short_sha: ${{ steps.sha.outputs.short }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Filter changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            catalog:
+              - 'catalog/**'
+            orders:
+              - 'orders/**'
+            inventory:
+              - 'inventory/**'
+            payments:
+              - 'payments/**'
+            notifications:
+              - 'notifications/**'
+            shared:
+              - 'Dockerfile'
+              - 'Dockerfile.ci'
+              - 'build.gradle.kts'
+              - 'settings.gradle.kts'
+              - 'gradlew'
+              - 'gradle/**'
+              - 'buildSrc/**'
+              - 'observability/**'
+              - 'security-support/**'
+              - 'money-path-contracts/**'
+
+  build-catalog:
+    name: Build & push catalog
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.catalog == 'true' ||
+      needs.detect-changes.outputs.shared == 'true' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.build_all == true || inputs.build_catalog == true))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build service jar
+        run: ./gradlew --no-daemon :catalog:bootJar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ci
+          build-args: SERVICE=catalog
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/catalog:${{ needs.detect-changes.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/catalog:latest
+          cache-from: type=gha,scope=catalog
+          cache-to: type=gha,mode=max,scope=catalog
+
+  build-orders:
+    name: Build & push orders
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.orders == 'true' ||
+      needs.detect-changes.outputs.shared == 'true' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.build_all == true || inputs.build_orders == true))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build service jar
+        run: ./gradlew --no-daemon :orders:bootJar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ci
+          build-args: SERVICE=orders
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/orders:${{ needs.detect-changes.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/orders:latest
+          cache-from: type=gha,scope=orders
+          cache-to: type=gha,mode=max,scope=orders
+
+  build-inventory:
+    name: Build & push inventory
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.inventory == 'true' ||
+      needs.detect-changes.outputs.shared == 'true' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.build_all == true || inputs.build_inventory == true))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build service jar
+        run: ./gradlew --no-daemon :inventory:bootJar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ci
+          build-args: SERVICE=inventory
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/inventory:${{ needs.detect-changes.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/inventory:latest
+          cache-from: type=gha,scope=inventory
+          cache-to: type=gha,mode=max,scope=inventory
+
+  build-payments:
+    name: Build & push payments
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.payments == 'true' ||
+      needs.detect-changes.outputs.shared == 'true' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.build_all == true || inputs.build_payments == true))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build service jar
+        run: ./gradlew --no-daemon :payments:bootJar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ci
+          build-args: SERVICE=payments
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/payments:${{ needs.detect-changes.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/payments:latest
+          cache-from: type=gha,scope=payments
+          cache-to: type=gha,mode=max,scope=payments
+
+  build-notifications:
+    name: Build & push notifications
+    needs: detect-changes
+    if: |
+      needs.detect-changes.outputs.notifications == 'true' ||
+      needs.detect-changes.outputs.shared == 'true' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.build_all == true || inputs.build_notifications == true))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build service jar
+        run: ./gradlew --no-daemon :notifications:bootJar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.ci
+          build-args: SERVICE=notifications
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/notifications:${{ needs.detect-changes.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/notifications:latest
+          cache-from: type=gha,scope=notifications
+          cache-to: type=gha,mode=max,scope=notifications
+
+  update-gitops:
+    name: Update GitOps values
+    needs:
+      - detect-changes
+      - build-catalog
+      - build-orders
+      - build-inventory
+      - build-payments
+      - build-notifications
+    if: |
+      always() &&
+      (
+        needs.build-catalog.result == 'success' ||
+        needs.build-orders.result == 'success' ||
+        needs.build-inventory.result == 'success' ||
+        needs.build-payments.result == 'success' ||
+        needs.build-notifications.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.GITOPS_REPO }}
+          token: ${{ secrets.CONFIG_REPO_PAT }}
+          path: gitops
+
+      - name: Update catalog image
+        if: needs.build-catalog.result == 'success'
+        uses: mikefarah/yq@v4.47.2
+        with:
+          cmd: yq e '.catalog.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/catalog" | .catalog.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
+
+      - name: Update orders image
+        if: needs.build-orders.result == 'success'
+        uses: mikefarah/yq@v4.47.2
+        with:
+          cmd: yq e '.orders.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/orders" | .orders.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
+
+      - name: Update inventory image
+        if: needs.build-inventory.result == 'success'
+        uses: mikefarah/yq@v4.47.2
+        with:
+          cmd: yq e '.inventory.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/inventory" | .inventory.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
+
+      - name: Update payments image
+        if: needs.build-payments.result == 'success'
+        uses: mikefarah/yq@v4.47.2
+        with:
+          cmd: yq e '.payments.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/payments" | .payments.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
+
+      - name: Update notifications image
+        if: needs.build-notifications.result == 'success'
+        uses: mikefarah/yq@v4.47.2
+        with:
+          cmd: yq e '.notifications.image.repository = "${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/notifications" | .notifications.image.tag = "${{ needs.detect-changes.outputs.short_sha }}"' -i gitops/${{ env.GITOPS_VALUES_FILE }}
+
+      - name: Commit and push
+        working-directory: gitops
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ env.GITOPS_VALUES_FILE }}"
+          git diff --cached --quiet && exit 0
+          git commit -m "ci: bump EuroTransit images to ${{ needs.detect-changes.outputs.short_sha }}"
+          git push

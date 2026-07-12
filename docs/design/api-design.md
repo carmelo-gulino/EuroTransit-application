@@ -37,7 +37,8 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 
 | Header | Required On | Contract |
 | --- | --- | --- |
-| `Authorization` | Protected external APIs and internal service calls according to the endpoint security summary | Carries a bearer JWT for public APIs or service identity plus propagated user context for internal calls. |
+| `Authorization` | Protected external APIs and internal service calls according to the endpoint security summary | Carries a bearer JWT for public APIs or service identity for internal calls. |
+| `X-User-Id` | Internal service-to-service calls (e.g. `POST /api/inventory/reservations`) | Explicitly propagates the original customer identity when the `Authorization` header carries a service account token instead of the user token. |
 | `X-Correlation-Id` | All internal calls, logs, and Kafka events | Public clients may provide it; the gateway generates one if absent; services must propagate it unchanged through one checkout flow. |
 | `Idempotency-Key` | `POST /api/orders`, `POST /api/inventory/reservations`, `POST /api/payments/authorize` | Identifies one mutating attempt. It is not an authorization credential and must be scoped with caller/user context, operation, and request fingerprint. |
 
