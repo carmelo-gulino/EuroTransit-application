@@ -12,6 +12,7 @@ This folder contains the assignment requirements and the project-owned documents
 - [design/architecture-decisions.md](design/architecture-decisions.md): consistency, money-path, and progressive-delivery decisions with alternatives.
 - [design/api-design.md](design/api-design.md): service boundaries, APIs, events, and sync/async communication shape.
 - [design/observability-conventions.md](design/observability-conventions.md): correlation id, structured logging, RED metrics, tracing, and probe conventions every service adopts.
+- [design/frontend.md](design/frontend.md): React customer SPA — OIDC/PKCE auth, in-memory token, SSE, and the frontend-security decisions (lecture 07b).
 
 ## Operations and Proof
 

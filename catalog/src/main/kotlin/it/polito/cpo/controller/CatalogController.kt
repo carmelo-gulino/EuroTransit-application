@@ -1,8 +1,8 @@
-package it.polito.cpo.catalog.api
+package it.polito.cpo.controller
 
-import it.polito.cpo.catalog.model.Offer
-import it.polito.cpo.catalog.model.Route
-import it.polito.cpo.catalog.repository.RouteRepository
+import it.polito.cpo.model.Offer
+import it.polito.cpo.model.Route
+import it.polito.cpo.repository.RouteRepository
 import it.polito.cpo.observability.ApiException
 import kotlinx.coroutines.flow.Flow
 import org.springframework.http.HttpStatus
