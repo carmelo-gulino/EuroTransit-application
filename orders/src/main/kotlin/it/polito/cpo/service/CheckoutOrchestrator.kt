@@ -16,13 +16,16 @@ import it.polito.cpo.contracts.events.OrderConfirmedEvent
 import it.polito.cpo.contracts.events.OrderPlacedEvent
 import it.polito.cpo.model.Order
 import it.polito.cpo.model.OrderStatus
+import it.polito.cpo.observability.ApiException
 import it.polito.cpo.observability.CorrelationId
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.reactor.ReactorContext
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -51,7 +54,12 @@ class CheckoutOrchestrator(
         val TERMINAL_STATES = setOf(OrderStatus.CONFIRMED, OrderStatus.FAILED, OrderStatus.CANCELLED)
     }
 
-    suspend fun checkout(request: CheckoutRequest, idempotencyKey: String, userId: String): CheckoutResponse {
+    suspend fun checkout(
+        request: CheckoutRequest,
+        idempotencyKey: String,
+        userId: String,
+        recipientEmail: String?,
+    ): CheckoutResponse {
         // Reuse the correlation id resolved by the inbound WebFilter (falls back to a fresh one
         // when the call is not driven through the filter, e.g. unit tests) so the trace stays
         // consistent across the sync accept, the emitted event, and the async pipeline.
@@ -59,9 +67,22 @@ class CheckoutOrchestrator(
             ?.getOrEmpty<String>(CorrelationId.CONTEXT_KEY)?.orElse(null)
             ?: CorrelationId.generate()
 
-        // 1. Check idempotency
+        val fingerprint = fingerprint(userId, request)
+
+        // 1. Check idempotency. Same key + same payload -> replay the stored result; same key + a
+        //    different logical payload -> 409 Conflict (api-design.md §Shared Request Headers).
         val existing = orderService.findIdempotentRequest(idempotencyKey)
         if (existing != null) {
+            if (existing.requestFingerprint != null && existing.requestFingerprint != fingerprint) {
+                meterRegistry.counter("orders.checkout.idempotency_conflict").increment()
+                logger.warn("Idempotency conflict for key {}: fingerprint mismatch", idempotencyKey)
+                throw ApiException(
+                    HttpStatus.CONFLICT,
+                    "IDEMPOTENCY_CONFLICT",
+                    "Idempotency key was reused with a different request",
+                )
+            }
+            meterRegistry.counter("orders.checkout.idempotent_replay").increment()
             logger.info("Found existing request for idempotency key: {}", idempotencyKey)
             return objectMapper.readValue(existing.responseBody, CheckoutResponse::class.java)
         }
@@ -78,15 +99,16 @@ class CheckoutOrchestrator(
             seats = request.seats.joinToString(","),
             totalAmount = request.totalAmount,
             createdAt = LocalDateTime.now(),
-            paymentMethodToken = request.paymentMethodToken
+            paymentMethodToken = request.paymentMethodToken,
+            recipientEmail = recipientEmail,
         ).apply { setAsNew(true) }
 
         orderService.saveOrder(order)
 
-        // 3. Save idempotency response
+        // 3. Save idempotency response (scoped with principal, operation and request fingerprint).
         val response = CheckoutResponse(orderId, OrderStatus.ACCEPTED)
         val responseBody = objectMapper.writeValueAsString(response)
-        orderService.saveIdempotentRequest(idempotencyKey, responseBody)
+        orderService.saveIdempotentRequest(idempotencyKey, responseBody, userId, "checkout", fingerprint)
 
         // 4. Emit order-placed: the durable trigger for the pipeline (consumed by processOrderPlaced).
         kafkaEventPublisher.publishOrderPlaced(
@@ -98,6 +120,21 @@ class CheckoutOrchestrator(
         )
 
         return response
+    }
+
+    // Canonical, order-independent fingerprint of the checkout payload (SHA-256 hex). Used to tell a
+    // genuine retry (same payload -> replay) from a key reuse with a different payload (-> 409).
+    private fun fingerprint(userId: String, request: CheckoutRequest): String {
+        val canonical = buildString {
+            append(userId).append('|')
+            append(request.routeId).append('|')
+            append(request.seats.sorted().joinToString(",")).append('|')
+            append(request.totalAmount.stripTrailingZeros().toPlainString()).append('|')
+            append(request.paymentMethodToken)
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
     }
 
     /**
@@ -131,8 +168,10 @@ class CheckoutOrchestrator(
         orderService.saveOrder(order)
 
         var reservationId: String? = null
+        var paymentAuthorized = false
         try {
             // Step 2: Call Inventory hold (idempotency key derived from the order id).
+            meterRegistry.counter("orders.inventory.hold.attempt").increment()
             val reservationResponse = inventoryClient.reserveSeats(
                 ReservationRequest(
                     orderId = orderId,
@@ -170,6 +209,7 @@ class CheckoutOrchestrator(
             if (paymentResponse.status != PaymentStatus.AUTHORIZED) {
                 throw IllegalStateException("Payment authorization declined: ${paymentResponse.status}")
             }
+            paymentAuthorized = true
 
             // Step 5: Success! Set state to CONFIRMED and drop the payment token.
             order.status = OrderStatus.CONFIRMED
@@ -191,19 +231,33 @@ class CheckoutOrchestrator(
                     orderId = orderId,
                     principalId = order.userId,
                     payload = NotificationRequestedPayload(
-                        recipientEmail = "customer@example.com",
+                        recipientEmail = recipientEmail(order),
                         message = "Your order $orderId has been successfully confirmed!"
                     )
                 )
             )
 
             outcome = "confirmed"
-            meterRegistry.counter("orders.checkout.confirmed").increment()
+            meterRegistry.counter("orders.checkout.completed", "result", "confirmed").increment()
             logger.info("Successfully confirmed order: {}", orderId)
 
         } catch (e: Exception) {
-            meterRegistry.counter("orders.checkout.failed").increment()
-            logger.warn("Checkout pipeline failed for order: {}, rolling back. Reason: {}", orderId, e.message)
+            val reason = classifyFailure(e, paymentAuthorized)
+            outcome = reason
+            meterRegistry.counter("orders.checkout.completed", "result", "failed").increment()
+            meterRegistry.counter("orders.checkout.failed", "reason", reason).increment()
+
+            if (paymentAuthorized) {
+                // Money-taken-but-not-confirmed window: authorization succeeded but a later step failed.
+                // We still release the seat and fail the order; an automated payment refund is NOT wired
+                // yet (documented follow-up, see plan P3.3) — surface it loudly for reconciliation.
+                logger.error(
+                    "Order {} was payment-authorized but not confirmed ({}). Manual refund/reconciliation may be required.",
+                    orderId, e.message,
+                )
+            } else {
+                logger.warn("Checkout pipeline failed for order: {}, rolling back. Reason: {}", orderId, e.message)
+            }
 
             // Compensation: Release Inventory if held
             if (reservationId != null) {
@@ -227,7 +281,7 @@ class CheckoutOrchestrator(
                     orderId = orderId,
                     principalId = order.userId,
                     payload = NotificationRequestedPayload(
-                        recipientEmail = "customer@example.com",
+                        recipientEmail = recipientEmail(order),
                         message = "Your order $orderId failed. Reason: ${e.message}"
                     )
                 )
@@ -235,5 +289,25 @@ class CheckoutOrchestrator(
         } finally {
             sample.stop(meterRegistry.timer("orders.checkout.duration", "outcome", outcome))
         }
+    }
+
+    // Delivery address for the notification, captured at checkout from the JWT `email` claim. If the
+    // token had no email, fall back to a placeholder and warn — the checkout must not fail for this.
+    private fun recipientEmail(order: Order): String {
+        val email = order.recipientEmail
+        if (email.isNullOrBlank()) {
+            logger.warn("Order {} has no recipient email (missing JWT email claim); notification will use a placeholder", order.id)
+            return "unknown@eurotransit.invalid"
+        }
+        return email
+    }
+
+    // Low-cardinality failure reason for metrics/logs.
+    private fun classifyFailure(e: Exception, paymentAuthorized: Boolean): String = when {
+        paymentAuthorized -> "authorized_not_confirmed"
+        e is IllegalStateException && e.message?.contains("reservation rejected", ignoreCase = true) == true -> "reservation_rejected"
+        e is IllegalStateException && e.message?.contains("declined", ignoreCase = true) == true -> "payment_declined"
+        e is IllegalStateException && e.message?.contains("payment method token", ignoreCase = true) == true -> "payment_token_missing"
+        else -> "dependency_error"
     }
 }

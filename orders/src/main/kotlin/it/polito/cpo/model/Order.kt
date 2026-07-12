@@ -19,7 +19,10 @@ class Order(
     val createdAt: LocalDateTime,
     // Sandbox payment reference kept only until the order reaches a terminal state, so the
     // asynchronous pipeline can reconstruct the payment request. Cleared on CONFIRMED/FAILED.
-    var paymentMethodToken: String? = null
+    var paymentMethodToken: String? = null,
+    // Delivery address for the confirmation/failure notification, captured from the JWT `email`
+    // claim at checkout (the async pipeline has no JWT in scope). Not an ownership key.
+    val recipientEmail: String? = null,
 ) : Persistable<UUID> {
 
     @Transient

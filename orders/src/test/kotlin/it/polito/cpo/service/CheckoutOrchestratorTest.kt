@@ -20,9 +20,12 @@ import it.polito.cpo.model.OrderStatus
 import it.polito.cpo.repository.IdempotentRequestRepository
 import it.polito.cpo.repository.OrderRepository
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import it.polito.cpo.observability.ApiException
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.mockito.Mockito.mock
+import org.springframework.http.HttpStatus
 import org.springframework.kafka.core.KafkaTemplate
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.databind.json.JsonMapper
@@ -67,8 +70,14 @@ class CheckoutOrchestratorTest {
             return order
         }
 
-        override suspend fun saveIdempotentRequest(key: String, responseBody: String): IdempotentRequest {
-            val request = IdempotentRequest(key, responseBody, LocalDateTime.now())
+        override suspend fun saveIdempotentRequest(
+            key: String,
+            responseBody: String,
+            principalId: String,
+            operation: String,
+            requestFingerprint: String,
+        ): IdempotentRequest {
+            val request = IdempotentRequest(key, responseBody, LocalDateTime.now(), principalId, operation, requestFingerprint)
             idempotencyStore[key] = request
             return request
         }
@@ -114,7 +123,8 @@ class CheckoutOrchestratorTest {
         val response = orchestratorFor(service).checkout(
             request = CheckoutRequest(routeId = "R1", seats = listOf("1A", "1B"), totalAmount = BigDecimal("100.00"), paymentMethodToken = "test-token"),
             idempotencyKey = "key-123",
-            userId = "user-1"
+            userId = "user-1",
+            recipientEmail = "alice@example.com"
         )
 
         assertEquals(OrderStatus.ACCEPTED, response.status)
@@ -134,12 +144,37 @@ class CheckoutOrchestratorTest {
         val response = orchestratorFor(service).checkout(
             request = CheckoutRequest(routeId = "R1", seats = listOf("2A"), totalAmount = BigDecimal("50.00"), paymentMethodToken = "test-token"),
             idempotencyKey = "key-abc",
-            userId = "user-1"
+            userId = "user-1",
+            recipientEmail = "alice@example.com"
         )
 
         assertEquals(storedOrderId, response.orderId)
         assertEquals(OrderStatus.ACCEPTED, response.status)
         // Replaying an existing request must NOT create or persist a new order.
+        assertTrue(service.savedOrderStatuses.isEmpty())
+    }
+
+    @Test
+    fun `same idempotency key with a different payload is rejected with 409`() = runTest {
+        val service = FakeOrderService()
+        val storedResponse = CheckoutResponse(UUID.randomUUID(), OrderStatus.ACCEPTED)
+        // Seeded record whose stored fingerprint cannot match the incoming request payload.
+        service.seeded = IdempotentRequest(
+            "key-x", mapper.writeValueAsString(storedResponse), LocalDateTime.now(),
+            "user-1", "checkout", "a-different-fingerprint",
+        )
+
+        val ex = assertThrows<ApiException> {
+            orchestratorFor(service).checkout(
+                request = CheckoutRequest(routeId = "R9", seats = listOf("9Z"), totalAmount = BigDecimal("999.00"), paymentMethodToken = "other-token"),
+                idempotencyKey = "key-x",
+                userId = "user-1",
+                recipientEmail = "alice@example.com"
+            )
+        }
+
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.code)
         assertTrue(service.savedOrderStatuses.isEmpty())
     }
 

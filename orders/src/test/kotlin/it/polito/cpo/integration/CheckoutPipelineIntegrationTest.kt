@@ -92,7 +92,7 @@ class CheckoutPipelineIntegrationTest {
 
     @Test
     fun `happy path drives the order through Kafka to CONFIRMED`() = runBlocking {
-        val response = orchestrator.checkout(request(), "it-happy-${UUID.randomUUID()}", "user-1")
+        val response = orchestrator.checkout(request(), "it-happy-${UUID.randomUUID()}", "user-1", "user-1@example.com")
         assertEquals(OrderStatus.ACCEPTED, response.status)
 
         val order = awaitTerminal(response.orderId)
@@ -103,7 +103,7 @@ class CheckoutPipelineIntegrationTest {
 
     @Test
     fun `a payment decline fails the order and compensates the seat hold`() = runBlocking {
-        val response = orchestrator.checkout(request(token = DECLINE_TOKEN), "it-decline-${UUID.randomUUID()}", "user-1")
+        val response = orchestrator.checkout(request(token = DECLINE_TOKEN), "it-decline-${UUID.randomUUID()}", "user-1", "user-1@example.com")
         val order = awaitTerminal(response.orderId)
 
         assertEquals(OrderStatus.FAILED, order.status)
@@ -112,7 +112,7 @@ class CheckoutPipelineIntegrationTest {
 
     @Test
     fun `a redelivered order-placed is idempotent and does not reprocess a terminal order`() = runBlocking {
-        val response = orchestrator.checkout(request(), "it-redeliver-${UUID.randomUUID()}", "user-1")
+        val response = orchestrator.checkout(request(), "it-redeliver-${UUID.randomUUID()}", "user-1", "user-1@example.com")
         val order = awaitTerminal(response.orderId)
         assertEquals(OrderStatus.CONFIRMED, order.status)
         assertEquals(1, payment.authorizedOrderIds.count { it == response.orderId })
@@ -131,8 +131,8 @@ class CheckoutPipelineIntegrationTest {
     @Test
     fun `a duplicate idempotency key replays the same order without creating a new one`() = runBlocking {
         val key = "it-idem-${UUID.randomUUID()}"
-        val first = orchestrator.checkout(request(), key, "user-1")
-        val second = orchestrator.checkout(request(), key, "user-1")
+        val first = orchestrator.checkout(request(), key, "user-1", "user-1@example.com")
+        val second = orchestrator.checkout(request(), key, "user-1", "user-1@example.com")
 
         assertEquals(first.orderId, second.orderId)
     }

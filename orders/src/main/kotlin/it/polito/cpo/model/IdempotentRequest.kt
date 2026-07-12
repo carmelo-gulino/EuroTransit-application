@@ -10,7 +10,12 @@ import java.time.LocalDateTime
 class IdempotentRequest(
     @Id private val key: String,
     val responseBody: String,
-    val createdAt: LocalDateTime
+    val createdAt: LocalDateTime,
+    // Scope metadata per api-design.md: lets a reuse with a different payload be detected (409).
+    // Nullable to tolerate rows written before the V3 migration.
+    val principalId: String? = null,
+    val operation: String? = null,
+    val requestFingerprint: String? = null,
 ) : Persistable<String> {
 
     @Transient
