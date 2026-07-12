@@ -27,7 +27,9 @@ class OrderController(
         @AuthenticationPrincipal jwt: Jwt
     ): CheckoutResponse {
         val userId = jwt.subject ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing subject claim")
-        return checkoutOrchestrator.checkout(request, idempotencyKey, userId)
+        // email is optional delivery metadata (never the ownership key — that is `sub`).
+        val email = jwt.getClaimAsString("email")
+        return checkoutOrchestrator.checkout(request, idempotencyKey, userId, email)
     }
 
     @GetMapping("/{orderId}")
@@ -37,15 +39,14 @@ class OrderController(
     ): OrderView {
         val userId = jwt.subject ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing subject claim")
         val order = orderService.getOrderById(orderId)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found")
 
-        // Enforce ownership: the owner, or back-office staff (the `operations` realm role).
-        if (order.userId != userId) {
-            val roles = jwt.getClaim<Map<String, Any>>("realm_access")?.get("roles") as? List<*>
-            val isStaff = roles?.contains("operations") == true
-            if (!isStaff) {
-                throw ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to order")
-            }
+        // Ownership: the owner, or back-office staff (the `operations` realm role). A customer asking
+        // for another customer's order gets 404 — same as a genuinely missing order — so the API never
+        // reveals that another customer's order exists (api-design.md §Security Boundary).
+        val roles = jwt.getClaim<Map<String, Any>>("realm_access")?.get("roles") as? List<*>
+        val isStaff = roles?.contains("operations") == true
+        if (order == null || (order.userId != userId && !isStaff)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found")
         }
 
         return OrderView(

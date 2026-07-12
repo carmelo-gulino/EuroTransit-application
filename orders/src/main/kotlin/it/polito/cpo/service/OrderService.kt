@@ -26,8 +26,24 @@ class OrderService(
         return idempotencyRepository.findById(key)
     }
 
-    suspend fun saveIdempotentRequest(key: String, responseBody: String): IdempotentRequest {
-        val request = IdempotentRequest(key, responseBody, LocalDateTime.now())
+    suspend fun saveIdempotentRequest(
+        key: String,
+        responseBody: String,
+        principalId: String,
+        operation: String,
+        requestFingerprint: String,
+    ): IdempotentRequest {
+        val request = IdempotentRequest(
+            key = key,
+            responseBody = responseBody,
+            createdAt = LocalDateTime.now(),
+            principalId = principalId,
+            operation = operation,
+            requestFingerprint = requestFingerprint,
+        )
         return idempotencyRepository.save(request)
     }
+
+    suspend fun purgeExpiredIdempotency(cutoff: LocalDateTime): Long =
+        idempotencyRepository.deleteExpired(cutoff)
 }

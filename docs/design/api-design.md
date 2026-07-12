@@ -48,7 +48,7 @@ Idempotency keys are generated at the caller boundary for the operation they pro
 - Public clients reuse that key only for retries of the same checkout attempt.
 - A new checkout attempt uses a new key, even if the request payload is identical.
 - Orders consumes the public checkout key and stores it with `principalId`, operation, request fingerprint, and result.
-- Orders generates separate downstream keys for internal operations, for example `invres_{orderId}_v1` and `payauth_{orderId}_v1`.
+- Orders generates separate downstream keys for internal operations, derived from the immutable order id. The implemented scheme (ADR-011) is `inv-{orderId}` for the seat reservation, `pay-{orderId}` for the payment authorization, and `rel-{orderId}` for the compensating release.
 - Inventory and Payments store their received keys scoped by operation, service caller/user context where applicable, request fingerprint, and result.
 - Reusing the same key with the same logical payload returns the original logical result.
 - Reusing the same key with a different logical payload returns `409 Conflict`.
@@ -152,6 +152,8 @@ Orders, Inventory, and Payments use separate logical PostgreSQL databases with s
 ## Kafka Events
 
 Events use a common envelope. `schemaVersion` is the version of the event schema for the given `eventType`, not an order version or service version.
+
+> Implementation note (ADR-011): Orders drives the money path by calling Inventory and Payments **synchronously over HTTP inside the `order-placed` consumer**, and reacts to their HTTP responses. It does not currently *consume* the `inventory-*`/`payment-*` topics; those events are emitted by Inventory/Payments for observability/audit and future event-driven consumers. The consumer column below is the target contract, not a statement that every consumer is wired today.
 
 ```json
 {

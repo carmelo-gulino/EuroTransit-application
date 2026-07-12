@@ -1,6 +1,9 @@
 spring:
   application:
     name: orders
+  lifecycle:
+    # Bound the graceful-shutdown drain window (api-design.md §Resilience; ADR-007).
+    timeout-per-shutdown-phase: 25s
   reactor:
     # Propagate the Reactor context (correlationId) into the logging MDC.
     context-propagation: auto
@@ -50,6 +53,9 @@ spring:
 
 server:
   port: 8084
+  # Flip readiness OUT_OF_SERVICE on SIGTERM and drain in-flight work before stopping
+  # (api-design.md §Resilience; ADR-007). The Kafka listener container also stops gracefully.
+  shutdown: graceful
 
 logging:
   structured:
@@ -61,6 +67,17 @@ management:
     web:
       exposure:
         include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        # Liveness must NOT depend on downstream (DB/Kafka): only the process itself.
+        liveness:
+          include: livenessState
+        # Readiness reflects ApplicationAvailability; it flips to OUT_OF_SERVICE on graceful shutdown.
+        readiness:
+          include: readinessState
   metrics:
     tags:
       application: ${spring.application.name}
