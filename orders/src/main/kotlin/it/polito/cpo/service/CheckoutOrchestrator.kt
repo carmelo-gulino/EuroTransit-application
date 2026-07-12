@@ -4,6 +4,7 @@ import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.client.InventoryClient
 import it.polito.cpo.client.PaymentClient
 import it.polito.cpo.contracts.payments.PaymentRequest
+import it.polito.cpo.contracts.payments.PaymentStatus
 import it.polito.cpo.contracts.inventory.ReservationRequest
 import it.polito.cpo.contracts.inventory.ReservationStatus
 import it.polito.cpo.controller.dtos.CheckoutRequest

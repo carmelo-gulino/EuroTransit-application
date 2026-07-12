@@ -173,7 +173,7 @@ class CheckoutPipelineIntegrationTest {
     class ControllablePaymentClient : PaymentClient {
         val authorizedOrderIds = CopyOnWriteArrayList<UUID>()
 
-        override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse {
+        override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
             val declined = request.paymentMethodToken == DECLINE_TOKEN
             if (!declined) authorizedOrderIds.add(request.orderId)
             return PaymentResponse(
