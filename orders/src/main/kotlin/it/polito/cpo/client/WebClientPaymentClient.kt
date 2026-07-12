@@ -42,11 +42,12 @@ class WebClientPaymentClient(
     // Payments integrates with an external provider: allow a slightly longer timeout.
     private val timeout = Duration.ofSeconds(3)
 
-    override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse {
+    override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String, correlationId: String): PaymentResponse {
         return webClient.post()
             .uri("/api/payments/authorize")
             .contentType(MediaType.APPLICATION_JSON)
             .header("Idempotency-Key", idempotencyKey)
+            .header("X-Correlation-Id", correlationId)
             .bodyValue(request)
             .retrieve()
             .bodyToMono(PaymentResponse::class.java)

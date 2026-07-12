@@ -12,7 +12,9 @@ import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.ReactiveTransactionManager
+import org.springframework.transaction.reactive.TransactionalOperator
+import org.springframework.transaction.reactive.executeAndAwait
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.UUID
@@ -24,11 +26,16 @@ class PaymentService(
     private val paymentAuthorizationRepository: PaymentAuthorizationRepository,
     private val paymentRefundRepository: it.polito.cpo.payments.repository.PaymentRefundRepository,
     private val kafkaTemplate: KafkaTemplate<String, Any>,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    transactionManager: ReactiveTransactionManager
 ) : IPaymentService {
     private val log = LoggerFactory.getLogger(javaClass)
+    private val txOperator = TransactionalOperator.create(transactionManager)
 
-    @Transactional
+    companion object {
+        private val ISO_CURRENCY_PATTERN = Regex("^[A-Z]{3}$")
+    }
+
     override suspend fun authorize(
         orderId: String,
         principalId: String,
@@ -37,7 +44,15 @@ class PaymentService(
         paymentMethodToken: String,
         idempotencyKey: String
     ): PaymentResponse {
-        
+
+        // Validate before touching the DB or the provider: a malformed amount/currency is never a valid charge.
+        if (amount <= BigDecimal.ZERO) {
+            return PaymentResponse(PaymentStatus.DECLINED, null, "INVALID_AMOUNT")
+        }
+        if (!ISO_CURRENCY_PATTERN.matches(currency)) {
+            return PaymentResponse(PaymentStatus.DECLINED, null, "INVALID_CURRENCY")
+        }
+
         val fingerprint = "$orderId-$amount-$currency-$paymentMethodToken"
 
         // 1. Check idempotency record
@@ -50,7 +65,7 @@ class PaymentService(
             return objectMapper.readValue(existingRecord.responseBody, PaymentResponse::class.java)
         }
 
-        // 2. Call provider
+        // 2. Call provider (outside any DB transaction)
         val result = try {
             providerAdapter.authorize(amount, currency, paymentMethodToken, idempotencyKey)
         } catch (e: Exception) {
@@ -60,7 +75,6 @@ class PaymentService(
 
         val authStatus = if (result.success) PaymentStatus.AUTHORIZED else PaymentStatus.DECLINED
 
-        // 3. Save authorization
         val authorization = PaymentAuthorization(
             orderId = orderId,
             principalId = principalId,
@@ -69,10 +83,8 @@ class PaymentService(
             status = authStatus.name,
             providerReference = result.providerReference,
             idempotencyKey = idempotencyKey
-        )
-        paymentAuthorizationRepository.save(authorization)
+        ).apply { setAsNew(true) }
 
-        // 4. Save idempotency
         val response = PaymentResponse(authStatus, result.providerReference, result.errorCode)
         val idempotencyRecord = IdempotencyRecord(
             idempotencyKey = idempotencyKey,
@@ -82,8 +94,13 @@ class PaymentService(
             responseCode = if (result.success) 200 else 422,
             responseBody = objectMapper.writeValueAsString(response),
             createdAt = LocalDateTime.now()
-        )
-        idempotencyRepository.save(idempotencyRecord)
+        ).apply { setAsNew(true) }
+
+        // 3+4. Persist authorization and idempotency record atomically, in a short transaction
+        txOperator.executeAndAwait {
+            paymentAuthorizationRepository.save(authorization)
+            idempotencyRepository.save(idempotencyRecord)
+        }
 
         // 5. Emit event
         val eventType = if (result.success) "payment-authorized" else "payment-declined"
@@ -92,13 +109,17 @@ class PaymentService(
         return response
     }
 
-    @Transactional
     override suspend fun refund(
         orderId: String,
         amount: BigDecimal?,
         idempotencyKey: String
     ): it.polito.cpo.payments.dto.PaymentRefundResponse {
-        
+
+        // null amount means full refund; an explicit amount must be strictly positive.
+        if (amount != null && amount <= BigDecimal.ZERO) {
+            return it.polito.cpo.payments.dto.PaymentRefundResponse(IPaymentService.RefundStatus.FAILED, null, "INVALID_AMOUNT")
+        }
+
         val fingerprint = "refund-$orderId-$amount"
 
         // 1. Check idempotency record
@@ -119,7 +140,7 @@ class PaymentService(
             return it.polito.cpo.payments.dto.PaymentRefundResponse(IPaymentService.RefundStatus.FAILED, null, "INVALID_AUTHORIZATION_STATUS")
         }
 
-        // 3. Call provider
+        // 3. Call provider (outside any DB transaction)
         val result = try {
             providerAdapter.refund(authorization.providerReference, amount, idempotencyKey)
         } catch (e: Exception) {
@@ -129,18 +150,15 @@ class PaymentService(
 
         val refundStatus = if (result.success) IPaymentService.RefundStatus.REFUNDED else IPaymentService.RefundStatus.FAILED
 
-        // 4. Save refund record
         val paymentRefund = it.polito.cpo.payments.model.PaymentRefund(
-            authorizationId = authorization.id,
+            authorizationId = authorization.getId(), // We must use getId() since id is private
             amount = amount,
             currency = authorization.currency,
             status = refundStatus.name,
             providerReference = result.refundReference,
             idempotencyKey = idempotencyKey
-        )
-        paymentRefundRepository.save(paymentRefund)
+        ).apply { setAsNew(true) }
 
-        // 5. Save idempotency
         val response = it.polito.cpo.payments.dto.PaymentRefundResponse(refundStatus, result.refundReference, result.errorCode)
         val idempotencyRecord = IdempotencyRecord(
             idempotencyKey = idempotencyKey,
@@ -150,8 +168,13 @@ class PaymentService(
             responseCode = if (result.success) 200 else 422,
             responseBody = objectMapper.writeValueAsString(response),
             createdAt = LocalDateTime.now()
-        )
-        idempotencyRepository.save(idempotencyRecord)
+        ).apply { setAsNew(true) }
+
+        // 4+5. Persist refund record and idempotency record atomically, in a short transaction
+        txOperator.executeAndAwait {
+            paymentRefundRepository.save(paymentRefund)
+            idempotencyRepository.save(idempotencyRecord)
+        }
 
         // 6. Emit event
         val eventType = if (result.success) "payment-refunded" else "payment-refund-failed"
@@ -166,11 +189,12 @@ class PaymentService(
             "eventType" to eventType,
             "schemaVersion" to 1,
             "occurredAt" to LocalDateTime.now().toString(),
-            "correlationId" to org.slf4j.MDC.get("correlationId"),
+            "correlationId" to (org.slf4j.MDC.get("correlationId") ?: ""),
             "orderId" to orderId,
             "principalId" to principalId,
             "payload" to payload
         )
-        kafkaTemplate.send(eventType, orderId, event)
+
+        kafkaTemplate.send(eventType, orderId, objectMapper.writeValueAsString(event))
     }
 }

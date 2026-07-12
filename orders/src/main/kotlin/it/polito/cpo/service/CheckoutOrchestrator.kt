@@ -163,7 +163,8 @@ class CheckoutOrchestrator(
                     currency = "EUR",
                     paymentMethodToken = paymentToken
                 ),
-                idempotencyKey = "pay-$orderId"
+                idempotencyKey = "pay-$orderId",
+                correlationId = correlationId
             )
 
             if (paymentResponse.status != PaymentStatus.AUTHORIZED) {

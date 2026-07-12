@@ -11,6 +11,9 @@ import org.springframework.web.reactive.function.BodyInserters
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import org.springframework.web.reactive.function.client.awaitBody
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
+import reactor.netty.http.client.HttpClient
+import java.time.Duration
 import java.math.BigDecimal
 
 @Component
@@ -21,8 +24,13 @@ class StripeSandboxProvider(
 
     private val log = LoggerFactory.getLogger(javaClass)
     
-    // Costruiamo il client HTTP agganciandogli la chiave segreta (Bearer token)
+    // Configuro il timeout a livello di connessione HTTP (10 secondi)
+    private val httpClient = HttpClient.create()
+        .responseTimeout(Duration.ofSeconds(10))
+
+    // Costruiamo il client HTTP agganciandogli la chiave segreta e il timeout
     private val webClient = WebClient.builder()
+        .clientConnector(ReactorClientHttpConnector(httpClient))
         .baseUrl(sandboxUrl)
         .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer $secretKey")
         .build()
@@ -40,6 +48,7 @@ class StripeSandboxProvider(
         formData.add("amount", amount.multiply(BigDecimal(100)).toLong().toString())
         formData.add("currency", currency.lowercase())
         formData.add("source", paymentMethodToken)
+        // capture defaults to true: authorize and charge in one call
 
         return try {
             val response = webClient.post()
@@ -55,10 +64,12 @@ class StripeSandboxProvider(
                 providerReference = response.id
             )
         } catch (e: WebClientResponseException) {
-            log.warn("Stripe API returned error: ${e.statusCode} - ${e.responseBodyAsString}")
+            // Never log the raw provider response body: it may carry payment/card data (api-design.md
+            // forbids raw payment data / card details in logs). Log only the whitelisted error code.
+            val errorBody = try { e.getResponseBodyAs(StripeErrorResponse::class.java) } catch (_: Exception) { null }
+            log.warn("Stripe API returned error: status={} code={}", e.statusCode, errorBody?.error?.code ?: "unknown")
             if (e.statusCode.value() == 402) {
                 // HTTP 402 Payment Required is used by Stripe for card errors (e.g. insufficient funds)
-                val errorBody = e.getResponseBodyAs(StripeErrorResponse::class.java)
                 ProviderAuthorizationResult(
                     success = false,
                     providerReference = null,
@@ -73,6 +84,7 @@ class StripeSandboxProvider(
             throw e
         }
     }
+
     override suspend fun refund(
         providerReference: String,
         amount: BigDecimal?,
@@ -100,8 +112,9 @@ class StripeSandboxProvider(
                 refundReference = response.id
             )
         } catch (e: WebClientResponseException) {
-            log.warn("Stripe API returned error on refund: ${e.statusCode} - ${e.responseBodyAsString}")
+            // Never log the raw provider response body: it may carry payment/card data. Log only the whitelisted error code.
             val errorBody = try { e.getResponseBodyAs(StripeErrorResponse::class.java) } catch (_: Exception) { null }
+            log.warn("Stripe API returned error on refund: status={} code={}", e.statusCode, errorBody?.error?.code ?: "unknown")
             ProviderRefundResult(
                 success = false,
                 refundReference = null,

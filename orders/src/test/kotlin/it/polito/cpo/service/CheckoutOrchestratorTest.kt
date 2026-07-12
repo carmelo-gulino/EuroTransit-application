@@ -82,7 +82,7 @@ class CheckoutOrchestratorTest {
     }
 
     private class StubPaymentClient(private val status: PaymentStatus = PaymentStatus.AUTHORIZED) : PaymentClient {
-        override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String): PaymentResponse =
+        override suspend fun authorizePayment(request: PaymentRequest, idempotencyKey: String, correlationId: String): PaymentResponse =
             PaymentResponse(
                 status = status,
                 providerReference = "test-auth-id",
