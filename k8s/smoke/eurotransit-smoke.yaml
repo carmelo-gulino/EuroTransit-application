@@ -29,26 +29,20 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
             - name: SERVER_PORT
               value: "8080"
             - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
               value: "true"
             - name: MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED
               value: "false"
-            - name: SPRING_FLYWAY_ENABLED
-              value: "true"
-            - name: SPRING_R2DBC_URL
-              value: "r2dbc:postgresql://postgres-smoke:5432/eurotransit"
-            - name: SPRING_R2DBC_USERNAME
-              value: "test"
-            - name: SPRING_R2DBC_PASSWORD
-              value: "test"
-            - name: SPRING_FLYWAY_URL
-              value: "jdbc:postgresql://postgres-smoke:5432/eurotransit"
-            - name: SPRING_FLYWAY_USER
-              value: "test"
-            - name: SPRING_FLYWAY_PASSWORD
-              value: "test"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -105,6 +99,8 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
             - name: SERVER_PORT
               value: "8080"
             - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
@@ -114,17 +110,23 @@ spec:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
             - name: SPRING_R2DBC_URL
-              value: "r2dbc:postgresql://postgres-smoke:5432/eurotransit"
+              value: "r2dbc:postgresql://postgres-smoke:5432/orders"
             - name: SPRING_R2DBC_USERNAME
               value: "test"
             - name: SPRING_R2DBC_PASSWORD
               value: "test"
             - name: SPRING_FLYWAY_URL
-              value: "jdbc:postgresql://postgres-smoke:5432/eurotransit"
+              value: "jdbc:postgresql://postgres-smoke:5432/orders"
             - name: SPRING_FLYWAY_USER
               value: "test"
             - name: SPRING_FLYWAY_PASSWORD
               value: "test"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -181,6 +183,8 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
             - name: SERVER_PORT
               value: "8080"
             - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
@@ -190,17 +194,23 @@ spec:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
             - name: SPRING_R2DBC_URL
-              value: "r2dbc:postgresql://postgres-smoke:5432/eurotransit"
+              value: "r2dbc:postgresql://postgres-smoke:5432/inventory"
             - name: SPRING_R2DBC_USERNAME
               value: "test"
             - name: SPRING_R2DBC_PASSWORD
               value: "test"
             - name: SPRING_FLYWAY_URL
-              value: "jdbc:postgresql://postgres-smoke:5432/eurotransit"
+              value: "jdbc:postgresql://postgres-smoke:5432/inventory"
             - name: SPRING_FLYWAY_USER
               value: "test"
             - name: SPRING_FLYWAY_PASSWORD
               value: "test"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -257,6 +267,8 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
             - name: SERVER_PORT
               value: "8080"
             - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
@@ -266,17 +278,23 @@ spec:
             - name: SPRING_FLYWAY_ENABLED
               value: "true"
             - name: SPRING_R2DBC_URL
-              value: "r2dbc:postgresql://postgres-smoke:5432/eurotransit"
+              value: "r2dbc:postgresql://postgres-smoke:5432/payments"
             - name: SPRING_R2DBC_USERNAME
               value: "test"
             - name: SPRING_R2DBC_PASSWORD
               value: "test"
             - name: SPRING_FLYWAY_URL
-              value: "jdbc:postgresql://postgres-smoke:5432/eurotransit"
+              value: "jdbc:postgresql://postgres-smoke:5432/payments"
             - name: SPRING_FLYWAY_USER
               value: "test"
             - name: SPRING_FLYWAY_PASSWORD
               value: "test"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -333,26 +351,20 @@ spec:
           ports:
             - containerPort: 8080
           env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75"
             - name: SERVER_PORT
               value: "8080"
             - name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED
               value: "true"
             - name: MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED
               value: "false"
-            - name: SPRING_FLYWAY_ENABLED
-              value: "true"
-            - name: SPRING_R2DBC_URL
-              value: "r2dbc:postgresql://postgres-smoke:5432/eurotransit"
-            - name: SPRING_R2DBC_USERNAME
-              value: "test"
-            - name: SPRING_R2DBC_PASSWORD
-              value: "test"
-            - name: SPRING_FLYWAY_URL
-              value: "jdbc:postgresql://postgres-smoke:5432/eurotransit"
-            - name: SPRING_FLYWAY_USER
-              value: "test"
-            - name: SPRING_FLYWAY_PASSWORD
-              value: "test"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
@@ -383,6 +395,17 @@ spec:
       port: 8080
       targetPort: 8080
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-smoke-init
+  namespace: eurotransit-smoke
+data:
+  init-databases.sql: |
+    CREATE DATABASE orders;
+    CREATE DATABASE inventory;
+    CREATE DATABASE payments;
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -409,12 +432,26 @@ spec:
             - name: POSTGRES_PASSWORD
               value: test
             - name: POSTGRES_DB
-              value: eurotransit
+              value: postgres
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "test"]
             initialDelaySeconds: 2
             periodSeconds: 2
+          volumeMounts:
+            - name: postgres-smoke-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: postgres-smoke-init
+          configMap:
+            name: postgres-smoke-init
 ---
 apiVersion: v1
 kind: Service

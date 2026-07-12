@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { placeOrder } from "../api/orders";
 import { ApiError, newId } from "../api/client";
@@ -27,6 +27,10 @@ export function CheckoutPage() {
   const [attemptKey, setAttemptKey] = useState(newId());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAttemptKey(newId());
+  }, [routeId, seats, amount]);
 
   const seatList = seats
     .split(",")
@@ -57,8 +61,6 @@ export function CheckoutPage() {
         } else {
           setError(e.message);
         }
-        // New attempt after a hard failure gets a fresh key (a retry of the SAME attempt would not).
-        if (e.kind !== "conflict") setAttemptKey(newId());
       } else {
         setError("Unexpected error");
       }

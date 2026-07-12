@@ -6,33 +6,33 @@ import it.polito.cpo.contracts.inventory.ReservationStatus
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
-import java.time.LocalDateTime
-import java.util.UUID
+
+import it.polito.cpo.service.ReservationService
+
 
 @RestController
 @RequestMapping("/api/inventory/reservations")
-class InventoryController {
+class InventoryController(
+    private val reservationService: ReservationService
+) {
 
     @PostMapping
     suspend fun createReservation(
         @RequestHeader("Idempotency-Key") idempotencyKey: String,
+        @RequestHeader("X-Correlation-Id") correlationId: String,
+        @RequestHeader("X-User-Id") userId: String,
         @RequestBody request: ReservationRequest
     ): ResponseEntity<ReservationResponse> {
-        // Stub implementation: always returns a successful hold
-        // Federico's Orders service will use this to test its pipeline.
-        val response = ReservationResponse(
-            reservationId = UUID.randomUUID().toString(),
-            status = ReservationStatus.HELD,
-            expiresAt = LocalDateTime.now().plusMinutes(10)
-        )
-        return ResponseEntity.status(HttpStatus.CREATED).body(response)
+        val response = reservationService.reserveSeats(idempotencyKey, userId, correlationId, request)
+        val httpStatus = if (response.status == ReservationStatus.FAILED) HttpStatus.CONFLICT else HttpStatus.CREATED
+        return ResponseEntity.status(httpStatus).body(response)
     }
 
     @DeleteMapping("/{reservationId}")
     suspend fun releaseReservation(
         @PathVariable reservationId: String
     ): ResponseEntity<Void> {
-        // Stub implementation: acknowledges the release
+        reservationService.releaseReservation(reservationId)
         return ResponseEntity.noContent().build()
     }
 }

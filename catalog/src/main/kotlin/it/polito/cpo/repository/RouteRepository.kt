@@ -1,7 +1,7 @@
-package it.polito.cpo.catalog.repository
+package it.polito.cpo.repository
 
-import it.polito.cpo.catalog.model.Offer
-import it.polito.cpo.catalog.model.Route
+import it.polito.cpo.model.Offer
+import it.polito.cpo.model.Route
 import kotlinx.coroutines.flow.Flow
 
 /**

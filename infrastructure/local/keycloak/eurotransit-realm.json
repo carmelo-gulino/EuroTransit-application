@@ -17,6 +17,15 @@
       "enabled": true,
       "publicClient": false,
       "bearerOnly": true
+    },
+    {
+      "clientId": "orders-service",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "orders-service-secret"
     }
   ],
   "roles": {
@@ -69,6 +78,12 @@
         }
       ],
       "realmRoles": ["operations"]
+    },
+    {
+      "username": "service-account-orders-service",
+      "enabled": true,
+      "serviceAccountClientId": "orders-service",
+      "realmRoles": ["service"]
     }
   ]
 }
