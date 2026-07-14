@@ -212,7 +212,7 @@ services:
       - -c
       - |
         psql -h postgres -U eurotransit -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-        SELECT 'CREATE USER orders WITH PASSWORD ''password'''
+        SELECT 'CREATE USER orders WITH PASSWORD ''password'' REPLICATION'
         WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'orders')\gexec
 
         SELECT 'CREATE USER inventory WITH PASSWORD ''password'' REPLICATION'
@@ -234,6 +234,7 @@ services:
         GRANT ALL PRIVILEGES ON DATABASE inventory_db TO inventory;
         GRANT ALL PRIVILEGES ON DATABASE payments_db TO payments;
         ALTER USER inventory WITH REPLICATION;
+        ALTER USER orders WITH REPLICATION;
         SQL
     depends_on:
       postgres:
