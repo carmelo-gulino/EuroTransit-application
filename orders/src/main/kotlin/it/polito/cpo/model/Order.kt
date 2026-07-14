@@ -23,6 +23,9 @@ class Order(
     // Delivery address for the confirmation/failure notification, captured from the JWT `email`
     // claim at checkout (the async pipeline has no JWT in scope). Not an ownership key.
     val recipientEmail: String? = null,
+    // Inventory reservation id, set once seats are held in the async pipeline. Enables a
+    // pre-payment cancellation to release the held seats. Null before RESERVING completes.
+    var reservationId: String? = null,
 ) : Persistable<UUID> {
 
     @Transient

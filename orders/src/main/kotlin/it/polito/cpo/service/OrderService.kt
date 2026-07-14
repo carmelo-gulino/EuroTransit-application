@@ -22,6 +22,19 @@ class OrderService(
         return orderRepository.save(order)
     }
 
+    // Race-free money-path transitions (see OrderRepository). Each returns rows affected: 0 means the
+    // order was cancelled concurrently (forward transitions) or is not cancellable (cancelIfUnpaid).
+    suspend fun markReserving(id: UUID): Long = orderRepository.markReserving(id)
+
+    suspend fun markPaymentPending(id: UUID, reservationId: String): Long =
+        orderRepository.markPaymentPending(id, reservationId)
+
+    suspend fun markConfirmed(id: UUID): Long = orderRepository.markConfirmed(id)
+
+    suspend fun markFailed(id: UUID): Long = orderRepository.markFailed(id)
+
+    suspend fun cancelIfUnpaid(id: UUID): Long = orderRepository.cancelIfUnpaid(id)
+
     suspend fun findIdempotentRequest(key: String): IdempotentRequest? {
         return idempotencyRepository.findById(key)
     }
