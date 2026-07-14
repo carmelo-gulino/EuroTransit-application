@@ -14,9 +14,10 @@ import org.springframework.util.backoff.FixedBackOff
 @Configuration
 class KafkaConfiguration {
 
-    // Values are pre-serialized to JSON strings by KafkaEventPublisher using the app's Jackson 3
-    // ObjectMapper (which handles java.time). This keeps producer and consumer symmetric (both
-    // String + manual parse) and avoids the Kafka JsonSerializer's Jackson 2 java.time gap.
+    // String producer/template. Orders no longer produces money-path events directly — they are
+    // written to the transactional outbox and relayed to Kafka by Debezium. This String template is
+    // retained for the consumer-side dead-letter recoverer below (and mirrors the String + manual
+    // parse convention the consumers use, avoiding the Kafka JsonSerializer's Jackson 2 java.time gap).
     @Bean
     fun producerFactory(properties: KafkaProperties): ProducerFactory<String, String> {
         val configProps = properties.buildProducerProperties()

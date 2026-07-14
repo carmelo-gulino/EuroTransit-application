@@ -28,7 +28,9 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
-    runtimeOnly("org.postgresql:r2dbc-postgresql")
+    // implementation (not runtimeOnly): the transactional-outbox row stores its payload as
+    // io.r2dbc.postgresql.codec.Json, referenced in OutboxEvent/CheckoutOrchestrator at compile time.
+    implementation("org.postgresql:r2dbc-postgresql")
 
     // Integration tests: real Postgres (R2DBC + Flyway) via Testcontainers + embedded Kafka.
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")

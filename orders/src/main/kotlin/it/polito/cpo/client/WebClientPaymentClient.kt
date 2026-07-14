@@ -6,6 +6,8 @@ import io.github.resilience4j.reactor.bulkhead.operator.BulkheadOperator
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator
 import io.github.resilience4j.reactor.retry.RetryOperator
 import io.github.resilience4j.retry.RetryRegistry
+import it.polito.cpo.contracts.payments.PaymentRefundRequest
+import it.polito.cpo.contracts.payments.PaymentRefundResponse
 import it.polito.cpo.contracts.payments.PaymentRequest
 import it.polito.cpo.contracts.payments.PaymentResponse
 import kotlinx.coroutines.reactor.awaitSingle
@@ -16,6 +18,7 @@ import org.springframework.security.oauth2.client.web.reactive.function.client.S
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import java.time.Duration
+import java.util.UUID
 
 @Component
 @Profile("!dev")
@@ -51,6 +54,22 @@ class WebClientPaymentClient(
             .bodyValue(request)
             .retrieve()
             .bodyToMono(PaymentResponse::class.java)
+            .timeout(timeout)
+            .transformDeferred(BulkheadOperator.of(bulkhead))
+            .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
+            .transformDeferred(RetryOperator.of(retry))
+            .awaitSingle()
+    }
+
+    override suspend fun refund(orderId: UUID, idempotencyKey: String): PaymentRefundResponse {
+        return webClient.post()
+            .uri("/api/payments/refund")
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("Idempotency-Key", idempotencyKey)
+            // Full refund: amount = null. Payments looks up the provider reference by orderId.
+            .bodyValue(PaymentRefundRequest(orderId = orderId.toString(), amount = null))
+            .retrieve()
+            .bodyToMono(PaymentRefundResponse::class.java)
             .timeout(timeout)
             .transformDeferred(BulkheadOperator.of(bulkhead))
             .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))

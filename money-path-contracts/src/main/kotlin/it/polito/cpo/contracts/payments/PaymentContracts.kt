@@ -20,3 +20,19 @@ data class PaymentResponse(
     val providerReference: String?,
     val errorCode: String? = null
 )
+
+// orders -> payments : POST /api/payments/refund (Idempotency-Key header).
+// The refund keys on orderId only; payments resolves the provider reference from its own
+// authorization record, so orders never has to store/pass a provider reference.
+data class PaymentRefundRequest(
+    val orderId: String,
+    val amount: BigDecimal? = null // null = full refund
+)
+
+enum class RefundStatus { REFUNDED, FAILED, CONFLICT, DEPENDENCY_FAILED, NOT_FOUND }
+
+data class PaymentRefundResponse(
+    val status: RefundStatus,
+    val refundReference: String?,
+    val errorCode: String? = null
+)
