@@ -37,7 +37,8 @@ EuroTransit is designed as an enterprise-grade system. Public APIs must assume a
 
 | Header | Required On | Contract |
 | --- | --- | --- |
-| `Authorization` | Protected external APIs and internal service calls according to the endpoint security summary | Carries a bearer JWT for public APIs or service identity plus propagated user context for internal calls. |
+| `Authorization` | Protected external APIs and internal service calls according to the endpoint security summary | Carries a bearer JWT for public APIs or service identity for internal calls. |
+| `X-User-Id` | Internal service-to-service calls (e.g. `POST /api/inventory/reservations`) | Explicitly propagates the original customer identity when the `Authorization` header carries a service account token instead of the user token. |
 | `X-Correlation-Id` | All internal calls, logs, and Kafka events | Public clients may provide it; the gateway generates one if absent; services must propagate it unchanged through one checkout flow. |
 | `Idempotency-Key` | `POST /api/orders`, `POST /api/inventory/reservations`, `POST /api/payments/authorize` | Identifies one mutating attempt. It is not an authorization credential and must be scoped with caller/user context, operation, and request fingerprint. |
 
@@ -47,7 +48,7 @@ Idempotency keys are generated at the caller boundary for the operation they pro
 - Public clients reuse that key only for retries of the same checkout attempt.
 - A new checkout attempt uses a new key, even if the request payload is identical.
 - Orders consumes the public checkout key and stores it with `principalId`, operation, request fingerprint, and result.
-- Orders generates separate downstream keys for internal operations, for example `invres_{orderId}_v1` and `payauth_{orderId}_v1`.
+- Orders generates separate downstream keys for internal operations, derived from the immutable order id. The implemented scheme (ADR-011) is `inv-{orderId}` for the seat reservation, `pay-{orderId}` for the payment authorization, and `rel-{orderId}` for the compensating release.
 - Inventory and Payments store their received keys scoped by operation, service caller/user context where applicable, request fingerprint, and result.
 - Reusing the same key with the same logical payload returns the original logical result.
 - Reusing the same key with a different logical payload returns `409 Conflict`.
@@ -131,6 +132,11 @@ Orders, Inventory, and Payments use separate logical PostgreSQL databases with s
   - Stores payment authorization idempotency records for 24 hours.
   - Calls a configured provider sandbox/test API through a Payments-owned adapter; raw card data and live charges are out of scope.
   - Accepts only payment method tokens or provider references, never raw card number, CVV, or live payment credentials.
+- `POST /api/payments/refund`
+  - Refunds a previously authorized payment for one order, full or partial.
+  - Internal API; callers must be trusted services such as Orders (compensation when an order is cancelled or fails after authorization).
+  - Requires an Orders-generated idempotency key so retries return the original refund result instead of refunding again.
+  - Calls the provider sandbox/test refund API through the Payments-owned adapter.
 
 ### Notifications
 
@@ -146,6 +152,8 @@ Orders, Inventory, and Payments use separate logical PostgreSQL databases with s
 ## Kafka Events
 
 Events use a common envelope. `schemaVersion` is the version of the event schema for the given `eventType`, not an order version or service version.
+
+> Implementation note (ADR-011): Orders drives the money path by calling Inventory and Payments **synchronously over HTTP inside the `order-placed` consumer**, and reacts to their HTTP responses. It does not currently *consume* the `inventory-*`/`payment-*` topics; those events are emitted by Inventory/Payments for observability/audit and future event-driven consumers. The consumer column below is the target contract, not a statement that every consumer is wired today.
 
 ```json
 {
@@ -169,6 +177,8 @@ Consumers must be idempotent because Kafka delivery is treated as at-least-once.
 | `inventory-failed` | Inventory | Orders | Indicates that the hold failed and the order must not proceed to payment. |
 | `payment-authorized` | Payments | Orders | Indicates payment authorization succeeded. |
 | `payment-declined` | Payments | Orders | Indicates payment failed and compensation may be needed. |
+| `payment-refunded` | Payments | Orders | Indicates a refund succeeded (compensation completed after a prior authorization). |
+| `payment-refund-failed` | Payments | Orders | Indicates a refund attempt failed and may need manual reconciliation. |
 | `order-confirmed` | Orders | Notifications, observability consumers | Indicates the order is complete and customer notification can be sent. |
 | `notification-requested` | Orders | Notifications | Optional explicit notification command if separated from `order-confirmed`. |
 

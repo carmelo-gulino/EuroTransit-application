@@ -9,6 +9,11 @@ COPY gradlew .
 COPY build.gradle.kts settings.gradle.kts ./
 COPY buildSrc buildSrc
 COPY catalog/build.gradle.kts catalog/build.gradle.kts
+# Shared library modules (whole source): they are included in settings.gradle.kts and
+# depended on by services, so their directories must exist for Gradle to configure the build.
+COPY observability observability
+COPY security-support security-support
+COPY money-path-contracts money-path-contracts
 COPY inventory/build.gradle.kts inventory/build.gradle.kts
 COPY notifications/build.gradle.kts notifications/build.gradle.kts
 COPY orders/build.gradle.kts orders/build.gradle.kts
