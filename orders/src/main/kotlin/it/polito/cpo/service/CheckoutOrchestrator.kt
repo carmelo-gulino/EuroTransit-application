@@ -1,23 +1,26 @@
 package it.polito.cpo.service
 
+import io.r2dbc.postgresql.codec.Json
 import tools.jackson.databind.ObjectMapper
 import it.polito.cpo.client.InventoryClient
 import it.polito.cpo.client.PaymentClient
 import it.polito.cpo.contracts.payments.PaymentRequest
 import it.polito.cpo.contracts.payments.PaymentStatus
+import it.polito.cpo.contracts.payments.RefundStatus
 import it.polito.cpo.contracts.inventory.ReservationRequest
 import it.polito.cpo.contracts.inventory.ReservationStatus
 import it.polito.cpo.controller.dtos.CheckoutRequest
 import it.polito.cpo.controller.dtos.CheckoutResponse
-import it.polito.cpo.event.KafkaEventPublisher
 import it.polito.cpo.contracts.events.NotificationRequestedEvent
 import it.polito.cpo.contracts.events.NotificationRequestedPayload
 import it.polito.cpo.contracts.events.OrderConfirmedEvent
 import it.polito.cpo.contracts.events.OrderPlacedEvent
 import it.polito.cpo.model.Order
 import it.polito.cpo.model.OrderStatus
+import it.polito.cpo.model.OutboxEvent
 import it.polito.cpo.observability.ApiException
 import it.polito.cpo.observability.CorrelationId
+import it.polito.cpo.repository.OutboxEventRepository
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import kotlinx.coroutines.currentCoroutineContext
@@ -25,6 +28,8 @@ import kotlinx.coroutines.reactor.ReactorContext
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.reactive.TransactionalOperator
+import org.springframework.transaction.reactive.executeAndAwait
 import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.util.UUID
@@ -32,21 +37,28 @@ import java.util.UUID
 /**
  * Checkout money-path coordinator.
  *
- * The synchronous entry ([checkout]) accepts the request quickly (202), persists the order in
- * ACCEPTED, records the caller idempotency record, and publishes `order-placed`. The reserve -> pay
- * -> confirm pipeline is NOT run inline: it is driven by the `order-placed` Kafka consumer
- * ([processOrderPlaced]) so it survives restarts. Kafka redelivery is at-least-once, so processing
- * is made idempotent by the order state (terminal orders are skipped) and by deriving the downstream
- * idempotency keys from the immutable order id.
+ * The synchronous entry ([checkout]) accepts the request quickly (202), and — in a single DB
+ * transaction — persists the order in ACCEPTED, records the caller idempotency record, and writes the
+ * `order-placed` outbox row. Debezium relays that outbox row to Kafka, so the DB write and the event
+ * are atomic (no dual-write). The reserve -> pay -> confirm pipeline is NOT run inline: it is driven
+ * by the `order-placed` Kafka consumer ([processOrderPlaced]) so it survives restarts. Kafka
+ * redelivery is at-least-once, so processing is made idempotent by the order state (terminal orders
+ * are skipped) and by deriving the downstream idempotency keys from the immutable order id.
+ *
+ * Forward state transitions in the pipeline use atomic conditional updates guarded by
+ * `status <> CANCELLED`, so a concurrent customer cancellation (allowed only while unpaid) can never
+ * be clobbered: a cancellation that commits mid-pipeline makes the next transition affect 0 rows,
+ * which aborts the pipeline into compensation (release seats + refund if already authorized).
  */
 @Service
 class CheckoutOrchestrator(
     private val orderService: OrderService,
     private val inventoryClient: InventoryClient,
     private val paymentClient: PaymentClient,
-    private val kafkaEventPublisher: KafkaEventPublisher,
+    private val outboxEventRepository: OutboxEventRepository,
     private val objectMapper: ObjectMapper,
-    private val meterRegistry: MeterRegistry
+    private val meterRegistry: MeterRegistry,
+    private val txOperator: TransactionalOperator,
 ) {
     private val logger = LoggerFactory.getLogger(CheckoutOrchestrator::class.java)
 
@@ -103,21 +115,20 @@ class CheckoutOrchestrator(
             recipientEmail = recipientEmail,
         ).apply { setAsNew(true) }
 
-        orderService.saveOrder(order)
-
-        // 3. Save idempotency response (scoped with principal, operation and request fingerprint).
+        // 3. Persist order + idempotency + the order-placed outbox row atomically (fixes the
+        //    order/idempotency and order/Kafka dual-write). Debezium relays the outbox row.
         val response = CheckoutResponse(orderId, OrderStatus.ACCEPTED)
         val responseBody = objectMapper.writeValueAsString(response)
-        orderService.saveIdempotentRequest(idempotencyKey, responseBody, userId, "checkout", fingerprint)
-
-        // 4. Emit order-placed: the durable trigger for the pipeline (consumed by processOrderPlaced).
-        kafkaEventPublisher.publishOrderPlaced(
-            OrderPlacedEvent(
-                correlationId = correlationId,
-                orderId = orderId,
-                principalId = userId
+        txOperator.executeAndAwait {
+            orderService.saveOrder(order)
+            orderService.saveIdempotentRequest(idempotencyKey, responseBody, userId, "checkout", fingerprint)
+            outboxEventRepository.save(
+                outbox(
+                    "order-placed", orderId,
+                    OrderPlacedEvent(correlationId = correlationId, orderId = orderId, principalId = userId),
+                )
             )
-        )
+        }
 
         return response
     }
@@ -162,10 +173,12 @@ class CheckoutOrchestrator(
         val sample = Timer.start(meterRegistry)
         var outcome = "failed"
 
-        // Step 1: Set state to RESERVING
-        order.status = OrderStatus.RESERVING
-        order.setAsNew(false)
-        orderService.saveOrder(order)
+        // Step 1: RESERVING. If the order was cancelled before the pipeline picked it up, abort.
+        if (orderService.markReserving(orderId) == 0L) {
+            logger.info("Order {} cancelled before pipeline start; skipping", orderId)
+            sample.stop(meterRegistry.timer("orders.checkout.duration", "outcome", "cancelled"))
+            return
+        }
 
         var reservationId: String? = null
         var paymentAuthorized = false
@@ -187,9 +200,10 @@ class CheckoutOrchestrator(
             }
             reservationId = reservationResponse.reservationId
 
-            // Step 3: Update state to PAYMENT_PENDING
-            order.status = OrderStatus.PAYMENT_PENDING
-            orderService.saveOrder(order)
+            // Step 3: PAYMENT_PENDING, persisting the reservation id. Abort if cancelled meanwhile.
+            if (orderService.markPaymentPending(orderId, reservationId) == 0L) {
+                throw IllegalStateException("Order cancelled before payment")
+            }
 
             // Step 4: Call Payments authorization
             val paymentToken = order.paymentMethodToken
@@ -211,31 +225,38 @@ class CheckoutOrchestrator(
             }
             paymentAuthorized = true
 
-            // Step 5: Success! Set state to CONFIRMED and drop the payment token.
-            order.status = OrderStatus.CONFIRMED
-            order.paymentMethodToken = null
-            orderService.saveOrder(order)
-
-            // Step 6: Publish confirmed & notification requested events
-            kafkaEventPublisher.publishOrderConfirmed(
-                OrderConfirmedEvent(
-                    correlationId = correlationId,
-                    orderId = orderId,
-                    principalId = order.userId
-                )
-            )
-
-            kafkaEventPublisher.publishNotificationRequested(
-                NotificationRequestedEvent(
-                    correlationId = correlationId,
-                    orderId = orderId,
-                    principalId = order.userId,
-                    payload = NotificationRequestedPayload(
-                        recipientEmail = recipientEmail(order),
-                        message = "Your order $orderId has been successfully confirmed!"
+            // Step 5: CONFIRMED + events, atomically. If the order was cancelled after the payment
+            // was authorized, markConfirmed affects 0 rows -> abort so the catch block refunds.
+            val confirmed = txOperator.executeAndAwait {
+                if (orderService.markConfirmed(orderId) == 0L) {
+                    false
+                } else {
+                    outboxEventRepository.save(
+                        outbox(
+                            "order-confirmed", orderId,
+                            OrderConfirmedEvent(correlationId = correlationId, orderId = orderId, principalId = order.userId),
+                        )
                     )
-                )
-            )
+                    outboxEventRepository.save(
+                        outbox(
+                            "notification-requested", orderId,
+                            NotificationRequestedEvent(
+                                correlationId = correlationId,
+                                orderId = orderId,
+                                principalId = order.userId,
+                                payload = NotificationRequestedPayload(
+                                    recipientEmail = recipientEmail(order),
+                                    message = "Your order $orderId has been successfully confirmed!"
+                                )
+                            ),
+                        )
+                    )
+                    true
+                }
+            }
+            if (confirmed != true) {
+                throw IllegalStateException("Order cancelled before confirmation")
+            }
 
             outcome = "confirmed"
             meterRegistry.counter("orders.checkout.completed", "result", "confirmed").increment()
@@ -247,19 +268,32 @@ class CheckoutOrchestrator(
             meterRegistry.counter("orders.checkout.completed", "result", "failed").increment()
             meterRegistry.counter("orders.checkout.failed", "reason", reason).increment()
 
+            // Fix #2: money-taken-but-not-confirmed window (incl. a cancellation that landed after
+            // authorization). Issue an automated refund; it is idempotent on the order id, so a Kafka
+            // re-drive is safe. A refund that does not complete is surfaced loudly for reconciliation.
             if (paymentAuthorized) {
-                // Money-taken-but-not-confirmed window: authorization succeeded but a later step failed.
-                // We still release the seat and fail the order; an automated payment refund is NOT wired
-                // yet (documented follow-up, see plan P3.3) — surface it loudly for reconciliation.
-                logger.error(
-                    "Order {} was payment-authorized but not confirmed ({}). Manual refund/reconciliation may be required.",
-                    orderId, e.message,
-                )
+                try {
+                    val refund = paymentClient.refund(orderId, "refund-$orderId")
+                    if (refund.status == RefundStatus.REFUNDED) {
+                        logger.info("Refund completed for order {} (ref {})", orderId, refund.refundReference)
+                        meterRegistry.counter("orders.refund", "result", "refunded").increment()
+                    } else {
+                        logger.error(
+                            "Refund NOT completed for order {}: {} — manual reconciliation required",
+                            orderId, refund.status,
+                        )
+                        meterRegistry.counter("orders.refund", "result", "failed").increment()
+                    }
+                } catch (rex: Exception) {
+                    logger.error("Refund call failed for order {} — manual reconciliation required", orderId, rex)
+                    meterRegistry.counter("orders.refund", "result", "error").increment()
+                }
             } else {
                 logger.warn("Checkout pipeline failed for order: {}, rolling back. Reason: {}", orderId, e.message)
             }
 
-            // Compensation: Release Inventory if held
+            // Compensation: Release Inventory if held (idempotent on inventory; may also be released
+            // by a concurrent cancellation).
             if (reservationId != null) {
                 try {
                     logger.info("Executing compensation: releasing seats reservation: {}", reservationId)
@@ -269,27 +303,79 @@ class CheckoutOrchestrator(
                 }
             }
 
-            // Mark order as FAILED and drop the payment token
-            order.status = OrderStatus.FAILED
-            order.paymentMethodToken = null
-            orderService.saveOrder(order)
-
-            // Notify user of failure
-            kafkaEventPublisher.publishNotificationRequested(
-                NotificationRequestedEvent(
-                    correlationId = correlationId,
-                    orderId = orderId,
-                    principalId = order.userId,
-                    payload = NotificationRequestedPayload(
-                        recipientEmail = recipientEmail(order),
-                        message = "Your order $orderId failed. Reason: ${e.message}"
+            // Mark FAILED + notify, unless the order was cancelled meanwhile (do not clobber CANCELLED).
+            val failed = txOperator.executeAndAwait {
+                if (orderService.markFailed(orderId) == 0L) {
+                    false
+                } else {
+                    outboxEventRepository.save(
+                        outbox(
+                            "notification-requested", orderId,
+                            NotificationRequestedEvent(
+                                correlationId = correlationId,
+                                orderId = orderId,
+                                principalId = order.userId,
+                                payload = NotificationRequestedPayload(
+                                    recipientEmail = recipientEmail(order),
+                                    message = "Your order $orderId failed. Reason: ${e.message}"
+                                )
+                            ),
+                        )
                     )
-                )
-            )
+                    true
+                }
+            }
+            if (failed != true) {
+                logger.info("Order {} was cancelled during the pipeline; left CANCELLED after compensation", orderId)
+            }
         } finally {
             sample.stop(meterRegistry.timer("orders.checkout.duration", "outcome", outcome))
         }
     }
+
+    /**
+     * Cancels an order — allowed only while it is unpaid (ACCEPTED/RESERVING/PAYMENT_PENDING). Once
+     * CONFIRMED the order is paid and cannot be cancelled. Ownership is enforced by the controller.
+     * Returns the cancelled order. Throws [ApiException] 409 if the order is not cancellable.
+     */
+    suspend fun cancel(orderId: UUID): Order {
+        // Atomic conditional cancel: race-free against the async pipeline.
+        if (orderService.cancelIfUnpaid(orderId) == 0L) {
+            val current = orderService.getOrderById(orderId)
+                ?: throw ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "Order not found")
+            throw ApiException(
+                HttpStatus.CONFLICT,
+                "ORDER_NOT_CANCELLABLE",
+                "Order in state ${current.status} cannot be cancelled (already paid or terminal)",
+            )
+        }
+
+        val order = orderService.getOrderById(orderId)
+            ?: throw ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "Order not found")
+
+        // Release any held seats (best-effort; release is idempotent, so overlapping with the
+        // pipeline's own compensation is safe).
+        order.reservationId?.let { rid ->
+            try {
+                inventoryClient.releaseSeats(rid, "cancel-$orderId")
+            } catch (e: Exception) {
+                logger.error("Failed to release seats for cancelled order {} (reservation {})", orderId, rid, e)
+            }
+        }
+
+        meterRegistry.counter("orders.cancel", "result", "cancelled").increment()
+        logger.info("Order {} cancelled", orderId)
+        return order
+    }
+
+    // Builds an outbox row carrying the serialized event as its JSON payload. Debezium's EventRouter
+    // routes by the `type` column to the matching topic and keys by `aggregate_id` (the order id).
+    private fun outbox(type: String, orderId: UUID, event: Any): OutboxEvent = OutboxEvent(
+        aggregateType = "Order",
+        aggregateId = orderId.toString(),
+        type = type,
+        payload = Json.of(objectMapper.writeValueAsString(event)),
+    )
 
     // Delivery address for the notification, captured at checkout from the JWT `email` claim. If the
     // token had no email, fall back to a placeholder and warn — the checkout must not fail for this.
@@ -305,6 +391,7 @@ class CheckoutOrchestrator(
     // Low-cardinality failure reason for metrics/logs.
     private fun classifyFailure(e: Exception, paymentAuthorized: Boolean): String = when {
         paymentAuthorized -> "authorized_not_confirmed"
+        e is IllegalStateException && e.message?.contains("cancelled", ignoreCase = true) == true -> "cancelled"
         e is IllegalStateException && e.message?.contains("reservation rejected", ignoreCase = true) == true -> "reservation_rejected"
         e is IllegalStateException && e.message?.contains("declined", ignoreCase = true) == true -> "payment_declined"
         e is IllegalStateException && e.message?.contains("payment method token", ignoreCase = true) == true -> "payment_token_missing"

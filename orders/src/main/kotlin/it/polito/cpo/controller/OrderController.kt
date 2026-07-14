@@ -49,7 +49,31 @@ class OrderController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found")
         }
 
-        return OrderView(
+        return toView(order)
+    }
+
+    @PostMapping("/{orderId}/cancel")
+    suspend fun cancel(
+        @PathVariable orderId: UUID,
+        @AuthenticationPrincipal jwt: Jwt
+    ): OrderView {
+        val userId = jwt.subject ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing subject claim")
+        val order = orderService.getOrderById(orderId)
+
+        // Same ownership rule as getOrder: owner or back-office `operations`. A non-owner (or a
+        // missing order) gets 404 so the API never reveals another customer's order exists.
+        val roles = jwt.getClaim<Map<String, Any>>("realm_access")?.get("roles") as? List<*>
+        val isStaff = roles?.contains("operations") == true
+        if (order == null || (order.userId != userId && !isStaff)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found")
+        }
+
+        // Cancellable only while unpaid; the orchestrator throws ApiException(409) otherwise.
+        return toView(checkoutOrchestrator.cancel(orderId))
+    }
+
+    private fun toView(order: it.polito.cpo.model.Order): OrderView =
+        OrderView(
             orderId = order.id,
             userId = order.userId,
             status = order.status,
@@ -58,5 +82,4 @@ class OrderController(
             totalAmount = order.totalAmount,
             createdAt = order.createdAt
         )
-    }
 }
