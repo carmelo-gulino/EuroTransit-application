@@ -108,7 +108,8 @@ class ReservationServiceTest {
         idempotencyRecordRepository = idemRepo,
         objectMapper = mapper,
         outboxEventRepository = outboxRepo,
-        transactionalOperator = fakeTransactionalOperator
+        transactionalOperator = fakeTransactionalOperator,
+        meterRegistry = io.micrometer.core.instrument.simple.SimpleMeterRegistry()
     )
 
     @Test

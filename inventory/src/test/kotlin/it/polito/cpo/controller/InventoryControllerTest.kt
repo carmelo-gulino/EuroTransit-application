@@ -73,7 +73,8 @@ class InventoryControllerTest {
         Mockito.mock(IdempotencyRecordRepository::class.java),
         Mockito.mock(OutboxEventRepository::class.java),
         Mockito.mock(ObjectMapper::class.java),
-        Mockito.mock(TransactionalOperator::class.java)
+        Mockito.mock(TransactionalOperator::class.java),
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry()
     ) {
         var lastReserveRequest: ReservationRequest? = null
         var lastIdempotencyKey: String? = null
