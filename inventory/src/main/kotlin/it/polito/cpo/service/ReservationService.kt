@@ -15,6 +15,7 @@ import it.polito.cpo.observability.ApiException
 import it.polito.cpo.repository.IdempotencyRecordRepository
 import it.polito.cpo.repository.ReservationRepository
 import it.polito.cpo.repository.SeatRepository
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,7 +36,8 @@ class ReservationService(
     private val idempotencyRecordRepository: IdempotencyRecordRepository,
     private val outboxEventRepository: OutboxEventRepository,
     private val objectMapper: ObjectMapper,
-    private val transactionalOperator: TransactionalOperator
+    private val transactionalOperator: TransactionalOperator,
+    private val meterRegistry: MeterRegistry
 ) {
     private val logger = LoggerFactory.getLogger(ReservationService::class.java)
 
@@ -60,6 +62,8 @@ class ReservationService(
         correlationId: String,
         request: ReservationRequest
     ): ReservationResponse {
+        meterRegistry.counter("inventory.holds.attempted").increment()
+        
         val fingerprint = generateFingerprint(request)
         
         // Fast-path check
@@ -106,6 +110,7 @@ class ReservationService(
 
                 // 2. Save Outbox Event inside the transaction
                 if (success) {
+                    meterRegistry.counter("inventory.holds.successful").increment()
                     logger.info("Successfully reserved seats for order: {} by principal: {}", request.orderId, principalId)
                     val event = InventoryReservedEvent(
                         correlationId = correlationId,
@@ -125,6 +130,7 @@ class ReservationService(
                     )
                     outboxEventRepository.save(outboxEvent)
                 } else {
+                    meterRegistry.counter("inventory.holds.rejected").increment()
                     logger.info("Failed to reserve seats for order: {} by principal: {}", request.orderId, principalId)
                     val event = InventoryFailedEvent(
                         correlationId = correlationId,
@@ -170,6 +176,8 @@ class ReservationService(
         fingerprint: String,
         idempotencyKey: String
     ): ReservationResponse {
+        meterRegistry.counter("inventory.idempotency.hits").increment()
+        
         if (existingRecord.requestFingerprint != fingerprint) {
             throw ApiException(
                 status = HttpStatus.CONFLICT,
@@ -196,6 +204,7 @@ class ReservationService(
         val reservation = reservationRepository.findByReservationId(reservationId)
         
         if (reservation != null && reservation.status == ReservationStatus.HELD.name) {
+            meterRegistry.counter("inventory.holds.released").increment()
             logger.info("Releasing reservation: {} for order: {}", reservationId, reservation.orderId)
             seatRepository.releaseSeats(reservationId)
             
@@ -207,5 +216,49 @@ class ReservationService(
         } else {
             logger.info("Ignored release request for reservation: {} (not found or already cancelled)", reservationId)
         }
+    }
+
+    /**
+     * Sweeps the database for reservations that have exceeded their hold period
+     * without being converted to a paid order. Releases the associated seats back to the
+     * pool and marks the reservation as EXPIRED. This operation is essential to
+     * maintain inventory correctness and prevent permanent oversell locks.
+     *
+     * @param now the current time used as a cutoff for evaluating expiration
+     * @return the number of reservations that were successfully expired and released
+     */
+    suspend fun sweepExpiredReservations(now: OffsetDateTime): Int {
+        var count = 0
+        val expiredReservations = reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.HELD.name, now)
+        
+        expiredReservations.collect { reservation ->
+            try {
+                transactionalOperator.executeAndAwait {
+                    val currentRes = reservationRepository.findByReservationId(reservation.reservationId)
+                    if (currentRes != null && currentRes.status == ReservationStatus.HELD.name) {
+                        logger.info("Reservation {} expired. Releasing seats.", reservation.reservationId)
+                        seatRepository.releaseSeats(reservation.reservationId)
+                        reservationRepository.save(currentRes.copy(status = "EXPIRED", isNewRecord = false))
+                        meterRegistry.counter("inventory.holds.expired").increment()
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error("Failed to expire reservation: {}", reservation.reservationId, e)
+            }
+        }
+        return count
+    }
+
+    /**
+     * Purges idempotency records that are older than the specified cutoff time.
+     * Enforces the retention policy (30 minutes) defined in the architecture decisions,
+     * ensuring the database table does not grow indefinitely.
+     *
+     * @param cutoff the timestamp before which records should be deleted
+     * @return the number of records deleted
+     */
+    suspend fun purgeExpiredIdempotency(cutoff: OffsetDateTime): Int {
+        return idempotencyRecordRepository.deleteByCreatedAtBefore(cutoff)
     }
 }
