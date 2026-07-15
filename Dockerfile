@@ -1,7 +1,5 @@
 FROM eclipse-temurin:21-jdk-alpine AS builder
 
-ARG SERVICE
-
 WORKDIR /workspace
 
 COPY gradle gradle
@@ -9,16 +7,27 @@ COPY gradlew .
 COPY build.gradle.kts settings.gradle.kts ./
 COPY buildSrc buildSrc
 COPY catalog/build.gradle.kts catalog/build.gradle.kts
-# Shared library modules (whole source): they are included in settings.gradle.kts and
+# Shared library modules build files: they are included in settings.gradle.kts and
 # depended on by services, so their directories must exist for Gradle to configure the build.
-COPY observability observability
-COPY security-support security-support
-COPY money-path-contracts money-path-contracts
+COPY observability/build.gradle.kts observability/build.gradle.kts
+COPY security-support/build.gradle.kts security-support/build.gradle.kts
+COPY money-path-contracts/build.gradle.kts money-path-contracts/build.gradle.kts
 COPY inventory/build.gradle.kts inventory/build.gradle.kts
 COPY notifications/build.gradle.kts notifications/build.gradle.kts
 COPY orders/build.gradle.kts orders/build.gradle.kts
 COPY payments/build.gradle.kts payments/build.gradle.kts
-COPY ${SERVICE} ${SERVICE}
+
+# Download dependencies (this layer will be cached unless a build.gradle.kts file changes)
+RUN ./gradlew --no-daemon dependencies || true
+
+# Copy shared library sources
+COPY observability/src observability/src
+COPY security-support/src security-support/src
+COPY money-path-contracts/src money-path-contracts/src
+
+ARG SERVICE
+# Copy the target service source
+COPY ${SERVICE}/src ${SERVICE}/src
 
 RUN ./gradlew --no-daemon ":${SERVICE}:bootJar"
 
