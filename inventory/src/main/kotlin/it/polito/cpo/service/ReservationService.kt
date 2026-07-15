@@ -217,4 +217,48 @@ class ReservationService(
             logger.info("Ignored release request for reservation: {} (not found or already cancelled)", reservationId)
         }
     }
+
+    /**
+     * Sweeps the database for reservations that have exceeded their hold period
+     * without being converted to a paid order. Releases the associated seats back to the
+     * pool and marks the reservation as EXPIRED. This operation is essential to
+     * maintain inventory correctness and prevent permanent oversell locks.
+     *
+     * @param now the current time used as a cutoff for evaluating expiration
+     * @return the number of reservations that were successfully expired and released
+     */
+    suspend fun sweepExpiredReservations(now: OffsetDateTime): Int {
+        var count = 0
+        val expiredReservations = reservationRepository.findByStatusAndExpiresAtBefore(ReservationStatus.HELD.name, now)
+        
+        expiredReservations.collect { reservation ->
+            try {
+                transactionalOperator.executeAndAwait {
+                    val currentRes = reservationRepository.findByReservationId(reservation.reservationId)
+                    if (currentRes != null && currentRes.status == ReservationStatus.HELD.name) {
+                        logger.info("Reservation {} expired. Releasing seats.", reservation.reservationId)
+                        seatRepository.releaseSeats(reservation.reservationId)
+                        reservationRepository.save(currentRes.copy(status = "EXPIRED", isNewRecord = false))
+                        meterRegistry.counter("inventory.holds.expired").increment()
+                        count++
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error("Failed to expire reservation: {}", reservation.reservationId, e)
+            }
+        }
+        return count
+    }
+
+    /**
+     * Purges idempotency records that are older than the specified cutoff time.
+     * Enforces the retention policy (30 minutes) defined in the architecture decisions,
+     * ensuring the database table does not grow indefinitely.
+     *
+     * @param cutoff the timestamp before which records should be deleted
+     * @return the number of records deleted
+     */
+    suspend fun purgeExpiredIdempotency(cutoff: OffsetDateTime): Int {
+        return idempotencyRecordRepository.deleteByCreatedAtBefore(cutoff)
+    }
 }
